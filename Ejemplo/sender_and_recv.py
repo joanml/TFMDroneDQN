@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/gym_AirSim python3
 
 import time
 from spade.agent import Agent

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/gym_AirSim python3
 
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
