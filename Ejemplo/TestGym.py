@@ -1,5 +1,6 @@
 import gym
-env = gym.make('AirSim-v0')
+import gym_AirSim.envs.AirSim_env
+env = gym.make('AirSim_env-v0')
 for i_episode in range(20):
     observation = env.reset()
     for t in range(100):
