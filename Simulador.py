@@ -1,19 +1,28 @@
-from time import sleep
+import time
 import Agentes
 from Agentes.Drone import Drone, Master, Slave
-from Agentes.AgenteSubscribe import SenderMasterAgent, ReciberSlaveAgent, UnoQuePasa
+from Agentes.AgenteSpadeDrone import PeriodicSenderAgent, ReceiverAgent, Config
 
 if __name__ == "__main__":
-    jidMaster="senderMasterAgent7@gtirouter.dsic.upv.es"
-    jidSlave="reciberSlaveAgent7@gtirouter.dsic.upv.es"
+    jidMaster = "senderMasterAgent9@gtirouter.dsic.upv.es"
+    jidSlave = "reciberSlaveAgent9@gtirouter.dsic.upv.es"
 
-    master = SenderMasterAgent(jid=jidMaster, password="123",jidSlave=jidSlave,n="Drone_1",L1="MyLidar1_1",L2="MyLidar1_2", GPS='GPS_1')
-    master.Behav1.takeoff(master.Behav1)
-    master.Behav1.moveTo(horizontal=10,lateral=200,altura=25,v=30)
-    future = master.start()
-    future.result()
-    slave = ReciberSlaveAgent(jid=jidSlave, password="123",n="Drone_2", L1="MyLidar2_1", L2="MyLidar2_2", GPS='GPS_2')
+    MasterConfig = Config(jidMaster,"123","Drone_1","MyLidar1_1","MyLidar1_2","GPS_1",jidSlave)
+    SlaveConfig = Config(jidMaster,"123","Drone_2","MyLidar2_1","MyLidar2_2","GPS_2")
+
+    master = PeriodicSenderAgent(MasterConfig)
+    slave = ReceiverAgent(SlaveConfig)
     slave.start()
+    master.start()
+    while slave.is_alive():
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+
+            slave.stop()
+            master.stop()
+            break
+    print("Agents finished")
 
     # #senderagent.start()
     #

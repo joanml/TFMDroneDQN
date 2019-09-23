@@ -127,13 +127,11 @@ class Drone():
         self.moveTo(x,y,z,v)
 
 class Master(Drone):
-    def __init__(self, jidSlave,n,L1,L2,GPS):
-        self.jidSlave = jidSlave
+    def __init__(self,jidSlave,n,L1,L2,GPS):
         self.iniciar_drone(n=n,L1=L1,L2=L2,GPS=GPS)
-        print(n," Ha iniciado como Master")
-        print(self.jidSlave," es el Slave del Master")
+        print(self.nombre," Ha iniciado como Master")
 
 class Slave(Drone):
     def __init__(self,n,L1,L2,GPS):
         self.iniciar_drone(n=n,L1=L1,L2=L2,GPS=GPS)
-        print(self.jid," Ha iniciado como Slave")
+        print(self.nombre," Ha iniciado como Slave")
