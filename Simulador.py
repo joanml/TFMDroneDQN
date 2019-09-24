@@ -4,8 +4,8 @@ from Agentes.Drone import Drone, Master, Slave
 from Agentes.AgenteSpadeDrone import PeriodicSenderAgent, ReceiverAgent, Config
 
 if __name__ == "__main__":
-    jidMaster = "senderMasterAgent9@gtirouter.dsic.upv.es"
-    jidSlave = "reciberSlaveAgent9@gtirouter.dsic.upv.es"
+    jidMaster = "senderMasterAgent13@gtirouter.dsic.upv.es"
+    jidSlave = "reciberSlaveAgent13@gtirouter.dsic.upv.es"
 
     MasterConfig = Config(jidMaster,"123","Drone_1","MyLidar1_1","MyLidar1_2","GPS_1",jidSlave)
     SlaveConfig = Config(jidMaster,"123","Drone_2","MyLidar2_1","MyLidar2_2","GPS_2")

@@ -1,6 +1,8 @@
 
 import time
 import datetime
+
+from lxml.html.diff import token
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from spade.message import Message
@@ -8,7 +10,7 @@ from spade.template import Template
 from Agentes.Drone import Master, Slave
 
 class Config():
-    def __init__(self, jid, password, name, lidar1, lidar2, gps,jidSlave=""):
+    def __init__(self, jid, password, name, lidar1, lidar2, gps,jidSlave="", vel = 5, giro = 15):
         self.jid = jid
         self.password = password
         self.jidSlave = jidSlave
@@ -16,6 +18,8 @@ class Config():
         self.lidar1 = lidar1
         self.lidar2 = lidar2
         self.gps = gps
+        self.vel = vel
+        self.giro = giro
 
 class PeriodicSenderAgent(Agent):
     def __init__(self, config):
@@ -50,12 +54,15 @@ class PeriodicSenderAgent(Agent):
             msg = Message(to=self.config.jid)  # Instantiate the message
 
             drone_pos = self.drone.getPosition()
-            msg.body = str(drone_pos)
+            msg.body = str(drone_pos.x_val)+';'+str(drone_pos.y_val)+';'+str(drone_pos.z_val)
 
             await self.send(msg)
             print("Message sent!")
+            self.drone.moveToAcelerador(pitch=0,roll=0,throttle=50,yaw_rate=10,duration=0.5)
+            self.drone.giroDerecha(self.config.giro)
 
-            if self.counter == 10:
+
+            if self.counter == 5:
                 self.kill()
             self.counter += 1
 
@@ -93,6 +100,9 @@ class ReceiverAgent(Agent):
             msg = await self.receive(timeout=30)  # wait for a message for 10 seconds
             if msg:
                 print("Message received with content: {}".format(msg.body))
+                coordenadas = [float(i) for i in str(msg.body).split(';')]
+                print(coordenadas)
+                self.drone.moveTo(coordenadas[0],coordenadas[1],coordenadas[2],self.config.vel)
             else:
                 print("Did not received any message after 10 seconds")
                 self.kill()

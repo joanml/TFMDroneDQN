@@ -54,10 +54,10 @@ class ReceiverAgent(Agent):
 
 
 if __name__ == "__main__":
-    receiveragent = ReceiverAgent("receiver9971612q@gtirouter.dsic.upv.es", "receiver_password")
+    receiveragent = ReceiverAgent("receiver997121612q@gtirouter.dsic.upv.es", "receiver_password")
     future = receiveragent.start()
     future.result() # wait for receiver agent to be prepared.
-    senderagent = PeriodicSenderAgent("sender9971612q@gtirouter.dsic.upv.es", "sender_password")
+    senderagent = PeriodicSenderAgent("sender9971123612q@gtirouter.dsic.upv.es", "sender_password")
     senderagent.start()
 
     while receiveragent.is_alive():

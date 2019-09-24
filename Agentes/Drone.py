@@ -50,6 +50,10 @@ class Drone():
         return self.client.moveByVelocityAsync(vx=-vx,vy=-vy,vz=-vz,duration=t,vehicle_name=self.nombre).join()
     def moveTo(self,horizontal,lateral,altura,v):
         return self.client.moveToPositionAsync(horizontal,lateral,-altura,v,vehicle_name=self.nombre).join()
+    def moveToAcelerador(self,pitch,roll,throttle,yaw_rate,duration):
+        return self.client.moveByAngleThrottleAsync(pitch=pitch, roll=roll, throttle=throttle,yaw_rate=yaw_rate, duration=duration,vehicle_name=self.nombre).join()
+    def moveByAngleZ(self,pitch,roll,z,yaw,duration):
+        return self.client.moveByAngleZAsync(pitch=pitch, roll=roll, z=z, yaw=yaw, duration=duration, vehicle_name = self.nombre).join()
     def saveImage(self):
         responses = self.client.simGetImages([ImageRequest("0", airsim.ImageType.Scene, False, False)],vehicle_name=self.nombre)
         response = responses[0]
@@ -111,7 +115,7 @@ class Drone():
     def getCollision(self):
         return self.client.getCollisionInfo(vehicle_name=self.nombre)
     def giroDerecha(self,giro):
-        return self.client.rotateByYawRateAsync(yaw_rate=giro,vehicle_name=self.name)
+        return self.client.rotateByYawRateAsync( yaw_rate=giro, duration=(giro*3)/360, vehicle_name = self.nombre).join()
     def setInfo(self, n, L1, L2, GPS):
         self.nombre=n
         self.nombreLidar1=L1

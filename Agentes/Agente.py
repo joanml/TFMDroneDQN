@@ -7,7 +7,6 @@ from spade.behaviour import OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-
 class SenderAgentOne(Agent):
     class InformBehav(OneShotBehaviour):
         async def on_start(self):
@@ -36,7 +35,6 @@ class SenderAgentOne(Agent):
         print("SenderAgent started")
         b = self.InformBehav()
         self.add_behaviour(b)
-
 
 class ReceiverAgentCyclic(Agent):
     class RecvBehav(CyclicBehaviour):
@@ -95,7 +93,6 @@ class ReceiverAgentCyclic(Agent):
     #     async def on_end(self):
     #         print("Agente ",' STOP')
 
-
 class SenderAgentCyclic(Agent):
     class InformBehav(CyclicBehaviour):
         async def on_start(self):
@@ -114,7 +111,6 @@ class SenderAgentCyclic(Agent):
         print("SenderAgent started")
         b = self.InformBehav()
         self.add_behaviour(b)
-
 
 class SenderAgent(Agent):
     class InformBehav(OneShotBehaviour):
