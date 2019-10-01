@@ -1,4 +1,3 @@
-
 import time
 import datetime
 
@@ -9,8 +8,9 @@ from spade.message import Message
 from spade.template import Template
 from Agentes.Drone import Master, Slave
 
+
 class Config():
-    def __init__(self, jid, password, name, lidar1, lidar2, gps,jidSlave="", vel = 5, giro = 15):
+    def __init__(self, jid, password, name, lidar1, lidar2, gps, jidSlave="", vel=20, giro=15):
         self.jid = jid
         self.password = password
         self.jidSlave = jidSlave
@@ -21,9 +21,10 @@ class Config():
         self.vel = vel
         self.giro = giro
 
+
 class PeriodicSenderAgent(Agent):
     def __init__(self, config):
-        Agent.__init__(self,jid=config.jid,password=config.password,verify_security=False)
+        Agent.__init__(self, jid=config.jid, password=config.password, verify_security=False)
         self.config = config
 
     async def setup(self):
@@ -38,6 +39,7 @@ class PeriodicSenderAgent(Agent):
         def __init__(self, period, start_at, config):
             PeriodicBehaviour.__init__(self, period=period, start_at=start_at)
             self.config = config
+
         async def on_start(self):
             self.drone = Master(jidSlave=self.config.jidSlave,
                                 n=self.config.name,
@@ -54,15 +56,29 @@ class PeriodicSenderAgent(Agent):
             msg = Message(to=self.config.jid)  # Instantiate the message
 
             drone_pos = self.drone.getPosition()
-            msg.body = str(drone_pos.x_val)+';'+str(drone_pos.y_val)+';'+str(drone_pos.z_val)
+            msg.body = str(int(drone_pos.x_val)) + ';' + str(int(drone_pos.y_val)) + ';' + str(int(drone_pos.z_val))
 
             await self.send(msg)
             print("Message sent!")
-            self.drone.moveToAcelerador(pitch=0,roll=0,throttle=50,yaw_rate=10,duration=0.5)
-            self.drone.giroDerecha(self.config.giro)
+            # self.drone.moveToAcelerador(pitch=0,roll=0,throttle=100,yaw_rate=90,duration=1)
+            # self.drone.moveAngulo(90)
 
+            if self.counter == 0:
+                self.drone.moveTo(0, -20, -20, self.config.vel)
+            elif self.counter == 1:
+                self.drone.moveTo(70, -20, -20, self.config.vel)
+            elif self.counter == 2:
+                self.drone.moveTo(70, 30, -20, self.config.vel)
+            elif self.counter == 3:
+                self.drone.moveTo(0, 30, -20, self.config.vel)
+            elif self.counter == 4:
+                self.drone.moveTo(0, 0, -20, self.config.vel)
+            elif self.counter == 5:
+                self.counter = 0
 
-            if self.counter == 5:
+            print(self.config.name,self.drone.getPosition())
+
+            if self.counter == 6:
                 self.kill()
             self.counter += 1
 
@@ -70,9 +86,10 @@ class PeriodicSenderAgent(Agent):
             # stop agent from behaviour
             await self.agent.stop()
 
+
 class ReceiverAgent(Agent):
     def __init__(self, config):
-        Agent.__init__(self,jid=config.jid,password=config.password,verify_security=False)
+        Agent.__init__(self, jid=config.jid, password=config.password, verify_security=False)
         self.config = config
 
     async def setup(self):
@@ -86,6 +103,7 @@ class ReceiverAgent(Agent):
         def __init__(self, config):
             CyclicBehaviour.__init__(self)
             self.config = config
+
         async def on_start(self):
             self.drone = Slave(n=self.config.name,
                                L1=self.config.lidar1,
@@ -102,11 +120,10 @@ class ReceiverAgent(Agent):
                 print("Message received with content: {}".format(msg.body))
                 coordenadas = [float(i) for i in str(msg.body).split(';')]
                 print(coordenadas)
-                self.drone.moveTo(coordenadas[0],coordenadas[1],coordenadas[2],self.config.vel)
+                self.drone.moveTo(coordenadas[0], coordenadas[1], coordenadas[2], self.config.vel)
             else:
                 print("Did not received any message after 10 seconds")
                 self.kill()
 
         async def on_end(self):
             await self.agent.stop()
-

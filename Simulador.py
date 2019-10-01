@@ -8,21 +8,22 @@ if __name__ == "__main__":
     jidSlave = "reciberSlaveAgent13@gtirouter.dsic.upv.es"
 
     MasterConfig = Config(jidMaster,"123","Drone_1","MyLidar1_1","MyLidar1_2","GPS_1",jidSlave)
-    SlaveConfig = Config(jidMaster,"123","Drone_2","MyLidar2_1","MyLidar2_2","GPS_2")
+    SlaveConfig = Config(jidMaster,"123","Drone_2","MyLidar2_1","MyLidar2_2","GPS_2",jidMaster)
 
     master = PeriodicSenderAgent(MasterConfig)
     slave = ReceiverAgent(SlaveConfig)
+    #slave = PeriodicSenderAgent(SlaveConfig)
     slave.start()
     master.start()
-    while slave.is_alive():
+    while master.is_alive():
         try:
             time.sleep(1)
         except KeyboardInterrupt:
-
             slave.stop()
             master.stop()
             break
     print("Agents finished")
+
 
     # #senderagent.start()
     #

@@ -5,6 +5,7 @@ from datetime import datetime
 import airsim
 import numpy as np
 from airsim import ImageRequest
+from airsim import YawMode
 
 
 class RolDrone:
@@ -20,22 +21,23 @@ class State:
     Disarmed = 5
 
 class Drone():
-    def iniciar_drone(self,n,L1,L2,GPS):
+
+    #Funcionan
+    def iniciar_drone(self, n, L1, L2, GPS):
+        airsim.YawMode.is_rate = False
         self.client = airsim.MultirotorClient()
         self.client.confirmConnection()
-        self.setInfo(n=n,L1=L1,L2=L2,GPS=GPS)
-        print(self.nombre," Conectado")
-
-    def getGps(self):
-        gps_data = self.client.getGpsData(gps_name=self.nombreGPS,vehicle_name=self.nombre)#self, gps_name=self.nombreGPS, vehicle_name=self.nombre)
-        s = pprint.pformat(gps_data)
-        return s
+        self.setInfo(n=n, L1=L1, L2=L2, GPS=GPS)
+        print(self.nombre, " Conectado")
+    def setInfo(self, n, L1, L2, GPS):
+        self.nombre=n
+        self.nombreLidar1=L1
+        self.nombreLidar2=L2
+        self.nombreGPS=GPS
+        self.client.enableApiControl(True,vehicle_name=self.nombre)
+        self.client.armDisarm(True,vehicle_name=self.nombre)
     def getPosition(self):
         return self.client.simGetGroundTruthKinematics(vehicle_name=self.nombre).position
-    def orientacion(self):
-        return self.client.getOrientation(vehicle_name=self.nombre)
-    def allInfo(self):
-        return self.client.getMultirotorState(vehicle_name=self.nombre)
     def takeoff(self):
         landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
         if landed == airsim.LandedState.Landed:
@@ -44,16 +46,28 @@ class Drone():
         else:
             print(self.nombre," already flying...")
             self.client.hoverAsync(vehicle_name=self.nombre).join()
+    def moveTo(self, horizontal, lateral, altura, v):
+        return self.client.moveToPositionAsync(horizontal, lateral, altura, v, vehicle_name=self.nombre).join()
+    def moveToAcelerador(self,pitch,roll,throttle,yaw_rate,duration):
+        return self.client.moveByAngleThrottleAsync(pitch=pitch, roll=roll, throttle=throttle,yaw_rate=yaw_rate, duration=duration,vehicle_name=self.nombre).join()
+
+    #No usadas
+    def getGps(self):
+        gps_data = self.client.getGpsData(gps_name=self.nombreGPS,
+                                          vehicle_name=self.nombre)  # self, gps_name=self.nombreGPS, vehicle_name=self.nombre)
+        s = pprint.pformat(gps_data)
+        return s
+    def getOrientacion(self):
+        return self.client.getOrientation(vehicle_name=self.nombre)
+    def getAllInfo(self):
+        return self.client.getMultirotorState(vehicle_name=self.nombre)
     def moveZ(self,Z,velocidad):
         return self.client.moveToZAsync(z=-Z,velocity=velocidad,vehicle_name=self.nombre).join()
     def moveVel(self,vx,vy,vz,t):
         return self.client.moveByVelocityAsync(vx=-vx,vy=-vy,vz=-vz,duration=t,vehicle_name=self.nombre).join()
-    def moveTo(self,horizontal,lateral,altura,v):
-        return self.client.moveToPositionAsync(horizontal,lateral,-altura,v,vehicle_name=self.nombre).join()
-    def moveToAcelerador(self,pitch,roll,throttle,yaw_rate,duration):
-        return self.client.moveByAngleThrottleAsync(pitch=pitch, roll=roll, throttle=throttle,yaw_rate=yaw_rate, duration=duration,vehicle_name=self.nombre).join()
     def moveByAngleZ(self,pitch,roll,z,yaw,duration):
         return self.client.moveByAngleZAsync(pitch=pitch, roll=roll, z=z, yaw=yaw, duration=duration, vehicle_name = self.nombre).join()
+
     def saveImage(self):
         responses = self.client.simGetImages([ImageRequest("0", airsim.ImageType.Scene, False, False)],vehicle_name=self.nombre)
         response = responses[0]
@@ -114,15 +128,24 @@ class Drone():
         return lindar
     def getCollision(self):
         return self.client.getCollisionInfo(vehicle_name=self.nombre)
-    def giroDerecha(self,giro):
-        return self.client.rotateByYawRateAsync( yaw_rate=giro, duration=(giro*3)/360, vehicle_name = self.nombre).join()
-    def setInfo(self, n, L1, L2, GPS):
-        self.nombre=n
-        self.nombreLidar1=L1
-        self.nombreLidar2=L2
-        self.nombreGPS=GPS
-        self.client.enableApiControl(True,vehicle_name=self.nombre)
-        self.client.armDisarm(True,vehicle_name=self.nombre)
+
+    #pruebas
+    def moveAngulo(self, angulo,z=10):
+        self.client.moveOnPathAsync(
+            [airsim.Vector3r(0, -253, z),
+             airsim.Vector3r(125, -253, z),
+             airsim.Vector3r(125, 0, z),
+             airsim.Vector3r(0, 0, z),
+             airsim.Vector3r(0, 0, -20)],
+            12,
+            120,
+            airsim.DrivetrainType.ForwardOnly,
+            airsim.YawMode(False, 0),
+            20,
+            1).join()
+        self.client.moveToPositionAsync(0, 0, z, 1).join()
+        #return self.client.moveByAngleThrottleAsync(vehicle_name=self.nombre, duration=(angulo * 3)/360, yaw_rate=angulo,throttle=0,roll=0,pitch=0).join()
+        #yaw_rate=angulo, duration=(angulo * 3) / 360, vehicle_name = self.nombre).join()
 
     def followMe(self,x,y,z,v):
         myPosition = self.getPosition()
