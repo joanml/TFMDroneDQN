@@ -64,21 +64,29 @@ class PeriodicSenderAgent(Agent):
             # self.drone.moveAngulo(90)
 
             if self.counter == 0:
-                self.drone.moveTo(0, -20, -20, self.config.vel)
+                #self.drone.moveTo(0, -20, -20, self.config.vel)
+                self.drone.moveArriba(20, self.config.vel)
             elif self.counter == 1:
-                self.drone.moveTo(70, -20, -20, self.config.vel)
+                #self.drone.moveTo(70, -20, -20, self.config.vel)
+                self.drone.moveIzquierda(20, self.config.vel)
             elif self.counter == 2:
-                self.drone.moveTo(70, 30, -20, self.config.vel)
+                #self.drone.moveTo(70, 30, -20, self.config.vel)
+                self.drone.moveDelante(20, self.config.vel)
             elif self.counter == 3:
-                self.drone.moveTo(0, 30, -20, self.config.vel)
+                #self.drone.moveTo(0, 30, -20, self.config.vel)
+                self.drone.moveDerecha(20, self.config.vel)
             elif self.counter == 4:
-                self.drone.moveTo(0, 0, -20, self.config.vel)
+                #self.drone.moveTo(0, 0, -20, self.config.vel)
+                self.drone.moveAtras(20, self.config.vel)
             elif self.counter == 5:
-                self.counter = 0
+                self.drone.moveIzquierda(20,self.config.vel)
+            elif self.counter == 6:
+                self.drone.moveAbajo(20,self.config.vel)
+                #self.counter = 1
 
             print(self.config.name,self.drone.getPosition())
 
-            if self.counter == 6:
+            if self.counter == 7:
                 self.kill()
             self.counter += 1
 
