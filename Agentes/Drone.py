@@ -5,12 +5,7 @@ from datetime import datetime
 import airsim
 import numpy as np
 from airsim import ImageRequest
-from airsim import YawMode
 
-
-class RolDrone:
-    Master = 1
-    Slave = 0
 
 
 class State:
@@ -210,3 +205,9 @@ class Slave(Drone):
     def __init__(self, n, L1, L2, GPS):
         self.iniciar_drone(n=n, L1=L1, L2=L2, GPS=GPS)
         print(self.nombre, " Ha iniciado como Slave")
+
+
+class DroneDQN(Drone):
+    def __init__(self, n, L1,L2,GPS):
+        self.iniciar_drone(n=n,L1=L1,L2=L2,GPS=GPS)
+        print(self.nombre, "Ha iniciado")

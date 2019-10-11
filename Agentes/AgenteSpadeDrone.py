@@ -6,7 +6,7 @@ from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from spade.message import Message
 from spade.template import Template
-from Agentes.Drone import Master, Slave
+from Agentes.Drone import Master, Slave, DroneDQN
 
 
 class Config():
@@ -134,4 +134,40 @@ class ReceiverAgent(Agent):
                 self.kill()
 
         async def on_end(self):
+            await self.agent.stop()
+
+
+class DQNAgent(Agent):
+    def __init__(self, config):
+        Agent.__init__(self, jid=config.jid, password=config.password, verify_security=False)
+        self.config = config
+
+    async def setup(self):
+        print("DQNAgent started")
+        start_at = datetime.datetime.now() + datetime.timedelta(seconds=5)
+        b = self.DQNBehav(period=2, start_at=start_at, config=self.config)
+        template = Template()
+        template.set_metadata("performative", "inform")
+        self.add_behaviour(b)
+
+    class DQNBehav(PeriodicBehaviour):
+        def __init__(self, period, start_at, config):
+            PeriodicBehaviour.__init__(self, period=period, start_at=start_at)
+            self.config = config
+
+        async def on_start(self):
+            print("DQNAgent on_start",self.config.name)
+
+            self.drone = DroneDQN(n=self.config.name,
+                               L1=self.config.lidar1,
+                               L2=self.config.lidar2,
+                               GPS=self.config.gps)
+            self.drone.takeoff()
+            print("DQNAgent takeoff")
+
+        async def run(self):
+            print("DQNAgent run")
+
+        async def on_end(self):
+            print("DQNAgent stop")
             await self.agent.stop()
