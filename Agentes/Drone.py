@@ -5,7 +5,7 @@ from datetime import datetime
 import airsim
 import numpy as np
 from airsim import ImageRequest
-
+from random import randrange
 
 
 class State:
@@ -46,6 +46,14 @@ class Drone():
         else:
             print(self.nombre, " already flying...")
             self.client.hoverAsync(vehicle_name=self.nombre).join()
+
+    def landing(self):
+        landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
+        if landed == airsim.LandedState.Flying:
+            print(self.nombre, " taking landing...")
+            self.client.landAsync(vehicle_name=self.nombre).join()
+        else:
+            print(self.nombre, " already landing...")
 
     def moveTo(self, horizontal, lateral, altura, v):
         return self.client.moveToPositionAsync(horizontal, lateral, altura, v, vehicle_name=self.nombre).join()
@@ -103,15 +111,30 @@ class Drone():
                                           str(dt.microsecond) + '.png'), img_rgb)
 
     def getImage(self):
-
+        responses =  self.client.simGetImages([airsim.ImageRequest(3, airsim.ImageType.DepthPerspective, True, False)])
+        img1d = np.array(responses[0].image_data_float, dtype=np.float)
+        print(len(img1d))
+        return 0
         png_image = self.client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.nombre)
 
         print(png_image)
 
-    def getLidar1(self):
-        lindar = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
+    def parse_lidarData(self, data):
 
-        dt = datetime.now()
+        # reshape array of floats to array of [X,Y,Z]
+        points = np.array(data.point_cloud, dtype=np.dtype('f4'))
+        points = np.reshape(points, (int(points.shape[0] / 3), 3))
+
+        return points
+
+    @property
+    def getLidar1(self):
+        info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
+        points = self.parse_lidarData(info)
+        return points
+        
+        lidar = list(info.point_cloud)
+        """dt = datetime.now()
         file = open('./Logs/' +
                     str(self.nombre) +
                     str(self.nombreLidar1) +
@@ -121,8 +144,31 @@ class Drone():
                     str(dt.second) +
                     str(dt.microsecond) + '.txt', 'w')
         file.write(str(lindar))
-        file.close()
-        return lindar
+        file.close()"""
+
+        '''
+        lista = list()
+        for i in lidar:
+            lista.append(i)
+        '''
+
+        size = len(lidar)
+
+
+        print("Tamaño",size)
+
+        while size < 120:
+            lidar.append(0)
+            size = len(lidar)
+        vuelta = int(size / 3)
+        m = np.asarray(lidar, dtype=np.float32)
+
+
+        return m.reshape((vuelta,3)).T
+        return np.random.rand(13,24)
+        return lidar
+
+
 
     def getLidar2(self):
         lindar = self.client.getLidarData(lidar_name=self.nombreLidar2, vehicle_name=self.nombre)

@@ -1,16 +1,22 @@
 import time
 import datetime
 
+import airsim
 from lxml.html.diff import token
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from spade.message import Message
 from spade.template import Template
 from Agentes.Drone import Master, Slave, DroneDQN
+import numpy as np
+import matplotlib.pyplot as plt
+from time import sleep
+
+
 
 
 class Config():
-    def __init__(self, jid, password, name, lidar1, lidar2, gps, jidSlave="", vel=20, giro=15):
+    def __init__(self, jid, password, name, lidar1, lidar2, gps, jidSlave="", vel=2, mov=2):
         self.jid = jid
         self.password = password
         self.jidSlave = jidSlave
@@ -19,7 +25,7 @@ class Config():
         self.lidar2 = lidar2
         self.gps = gps
         self.vel = vel
-        self.giro = giro
+        self.mov = mov
 
 
 class PeriodicSenderAgent(Agent):
@@ -167,7 +173,25 @@ class DQNAgent(Agent):
 
         async def run(self):
             print("DQNAgent run")
+            ##response = self.drone.getLidar1()
+
+            lidar = self.drone.getLidar1
+            #camera = self.drone.getImage()
+
+
+            plt.imshow(lidar)
+            #plt.imshow(camera)
+            plt.gray()
+            plt.show()
+
+            sleep(1)
+
+            self.drone.moveDerecha(self.config.mov, self.config.vel)
+            #plt.close()
+
+
 
         async def on_end(self):
             print("DQNAgent stop")
+            self.drone.landing()
             await self.agent.stop()
