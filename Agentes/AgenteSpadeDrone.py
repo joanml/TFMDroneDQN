@@ -9,6 +9,7 @@ from spade.message import Message
 from spade.template import Template
 from Agentes.Drone import Master, Slave, DroneDQN
 import numpy as np
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from time import sleep
 
@@ -169,6 +170,7 @@ class DQNAgent(Agent):
                                L2=self.config.lidar2,
                                GPS=self.config.gps)
             self.drone.takeoff()
+            self.drone.moveArriba(5,self.config.vel)
             print("DQNAgent takeoff")
 
         async def run(self):
@@ -178,15 +180,22 @@ class DQNAgent(Agent):
             lidar = self.drone.getLidar1
             #camera = self.drone.getImage()
 
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
 
-            plt.imshow(lidar)
-            #plt.imshow(camera)
-            plt.gray()
+            for m in lidar:
+                print(m[0],m[1],m[2])
+                ax.scatter(m[0],m[1],m[2], marker='o')
             plt.show()
 
-            sleep(1)
+            #plt.imshow(lidar)
+            #plt.imshow(camera)
+            #plt.gray()
+            #plt.show()
 
-            self.drone.moveDerecha(self.config.mov, self.config.vel)
+            #sleep(0.5)
+
+            self.drone.moveDelante(self.config.mov, self.config.vel)
             #plt.close()
 
 

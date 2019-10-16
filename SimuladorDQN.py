@@ -11,6 +11,11 @@ if __name__ == "__main__":
 
     dqndrone = DQNAgent(DroneConfig)
 
-
-
     dqndrone.start()
+
+    while dqndrone.is_alive():
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+            dqndrone.stop()
+            break

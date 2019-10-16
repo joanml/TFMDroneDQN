@@ -132,41 +132,8 @@ class Drone():
         info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
         points = self.parse_lidarData(info)
         return points
-        
-        lidar = list(info.point_cloud)
-        """dt = datetime.now()
-        file = open('./Logs/' +
-                    str(self.nombre) +
-                    str(self.nombreLidar1) +
-                    str(dt.date()) +
-                    str(dt.hour) +
-                    str(dt.minute) +
-                    str(dt.second) +
-                    str(dt.microsecond) + '.txt', 'w')
-        file.write(str(lindar))
-        file.close()"""
-
-        '''
-        lista = list()
-        for i in lidar:
-            lista.append(i)
-        '''
-
-        size = len(lidar)
 
 
-        print("Tamaño",size)
-
-        while size < 120:
-            lidar.append(0)
-            size = len(lidar)
-        vuelta = int(size / 3)
-        m = np.asarray(lidar, dtype=np.float32)
-
-
-        return m.reshape((vuelta,3)).T
-        return np.random.rand(13,24)
-        return lidar
 
 
 
@@ -219,7 +186,7 @@ class Drone():
     def moveIzquierda(self, y, vel):
         posicion = self.getPosition()
         self.moveTo(int(posicion.x_val), int(posicion.y_val) - y, int(posicion.z_val), vel)
-        print("IZQUIERDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaaaa", posicion)
+        #print("IZQUIERDA", posicion)
 
     def moveDelante(self,x,vel):
         posicion = self.getPosition()
@@ -229,7 +196,7 @@ class Drone():
         self.moveTo(int(posicion.x_val) - x, int(posicion.y_val), int(posicion.z_val), vel)
     def moveArriba(self,z, vel):
         posicion = self.getPosition()
-        if posicion.z_val - z < -50:
+        if posicion.z_val - z > -50:
             self.moveTo(int(posicion.x_val), int(posicion.y_val), int(posicion.z_val) - z, vel)
         else:
             self.moveTo(int(posicion.x_val), int(posicion.y_val), -50, vel)
