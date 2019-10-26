@@ -1,19 +1,14 @@
-import time
 import datetime
 
-import airsim
-from lxml.html.diff import token
+import numpy as np
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from spade.message import Message
 from spade.template import Template
+
 from Agentes.Drone import Master, Slave, DroneDQN
-import numpy as np
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-from time import sleep
-
-
 
 
 class Config():
@@ -71,27 +66,27 @@ class PeriodicSenderAgent(Agent):
             # self.drone.moveAngulo(90)
 
             if self.counter == 0:
-                #self.drone.moveTo(0, -20, -20, self.config.vel)
+                # self.drone.moveTo(0, -20, -20, self.config.vel)
                 self.drone.moveArriba(20, self.config.vel)
             elif self.counter == 1:
-                #self.drone.moveTo(70, -20, -20, self.config.vel)
+                # self.drone.moveTo(70, -20, -20, self.config.vel)
                 self.drone.moveIzquierda(20, self.config.vel)
             elif self.counter == 2:
-                #self.drone.moveTo(70, 30, -20, self.config.vel)
+                # self.drone.moveTo(70, 30, -20, self.config.vel)
                 self.drone.moveDelante(20, self.config.vel)
             elif self.counter == 3:
-                #self.drone.moveTo(0, 30, -20, self.config.vel)
+                # self.drone.moveTo(0, 30, -20, self.config.vel)
                 self.drone.moveDerecha(20, self.config.vel)
             elif self.counter == 4:
-                #self.drone.moveTo(0, 0, -20, self.config.vel)
+                # self.drone.moveTo(0, 0, -20, self.config.vel)
                 self.drone.moveAtras(20, self.config.vel)
             elif self.counter == 5:
-                self.drone.moveIzquierda(20,self.config.vel)
+                self.drone.moveIzquierda(20, self.config.vel)
             elif self.counter == 6:
-                self.drone.moveAbajo(20,self.config.vel)
-                #self.counter = 1
+                self.drone.moveAbajo(20, self.config.vel)
+                # self.counter = 1
 
-            print(self.config.name,self.drone.getPosition())
+            print(self.config.name, self.drone.getPosition())
 
             if self.counter == 7:
                 self.kill()
@@ -144,6 +139,34 @@ class ReceiverAgent(Agent):
             await self.agent.stop()
 
 
+def lidar2XY(lidar):
+    x = list()
+    y = list()
+    for m in lidar:
+        # print(m[1],m[0])
+        x.append(m[1])
+        y.append(m[0])
+
+    x = np.asarray(x)
+    y = np.asarray(y)
+    return x,y
+
+
+def xy2Image(x, y):
+    fig = Figure()  # figsize=(5, 5), dpi=100)
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    ax.scatter(x, y)
+    ax.plot(x, y, '-o')
+    ax.axis('off')
+    canvas.draw()
+    s, (width, height) = canvas.print_to_buffer()
+    # print(width, height)
+    from PIL import Image
+    im = Image.frombytes("RGBA", (width, height), s)
+    #im.show()
+    return im
+
 class DQNAgent(Agent):
     def __init__(self, config):
         Agent.__init__(self, jid=config.jid, password=config.password, verify_security=False)
@@ -163,14 +186,14 @@ class DQNAgent(Agent):
             self.config = config
 
         async def on_start(self):
-            print("DQNAgent on_start",self.config.name)
+            print("DQNAgent on_start", self.config.name)
 
             self.drone = DroneDQN(n=self.config.name,
-                               L1=self.config.lidar1,
-                               L2=self.config.lidar2,
-                               GPS=self.config.gps)
+                                  L1=self.config.lidar1,
+                                  L2=self.config.lidar2,
+                                  GPS=self.config.gps)
             self.drone.takeoff()
-            self.drone.moveArriba(5,self.config.vel)
+            self.drone.moveArriba(5, self.config.vel)
             print("DQNAgent takeoff")
 
         async def run(self):
@@ -178,14 +201,21 @@ class DQNAgent(Agent):
             ##response = self.drone.getLidar1()
 
             lidar = self.drone.getLidar1
-            #camera = self.drone.getImage()
 
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
+            x, y = lidar2XY(lidar)
 
-            for m in lidar:
-                print(m[0],m[1],m[2])
-                ax.scatter(m[0],m[1],m[2], marker='o')
+            im = xy2Image(x,y)
+            im.show()
+
+
+
+            #im = Image.fromarray(np.uint8(cm.gist_earth(s) * 255))
+
+            '''
+
+            plt.scatter(x,y)
+            plt.plot(x,y,'-0')
+            #img = matplotlib.image()
             plt.show()
 
             #plt.imshow(lidar)
@@ -194,11 +224,9 @@ class DQNAgent(Agent):
             #plt.show()
 
             #sleep(0.5)
-
+            '''
             self.drone.moveDelante(self.config.mov, self.config.vel)
-            #plt.close()
-
-
+            # plt.close()
 
         async def on_end(self):
             print("DQNAgent stop")
