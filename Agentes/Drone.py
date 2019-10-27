@@ -223,6 +223,14 @@ class Drone():
         points = self.parse_lidarData(info)
         return points
 
+    def getCollision(self):
+        return self.client.getCollisionInfo(vehicle_name=self.nombre)
+    def getQuadState(self):
+        return self.client.getMultirotorState(vehicle_name=self.nombre).kinematics_estimated.position
+    def getQuadVel(self):
+        return self.client.getMultirotorState(vehicle_name=self.nombre).kinematics_estimated.linear_velocity
+
+
     # No usadas
     def getGps(self):
         gps_data = self.client.getGpsData(gps_name=self.nombreGPS,
@@ -280,12 +288,6 @@ class Drone():
 
         print(png_image)
 
-
-
-
-
-
-
     def getLidar2(self):
         lindar = self.client.getLidarData(lidar_name=self.nombreLidar2, vehicle_name=self.nombre)
 
@@ -302,10 +304,7 @@ class Drone():
         file.close()
         return lindar
 
-    def getCollision(self):
-        return self.client.getCollisionInfo(vehicle_name=self.nombre)
-
-    # pruebas
+        # pruebas
     def moveAngulo(self, angulo, z=10):
         self.client.moveOnPathAsync(
             [airsim.Vector3r(0, -253, z),
@@ -482,6 +481,45 @@ class DroneDQN(Drone):
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
 
+    def compute_reward(self):
+
+        self.collision_info = self.getCollision()
+        self.quad_state = self.getQuadState()
+        self.quad_vel = self.getQuadVel()
+        thresh_dist = 7
+        beta = 1
+
+        z = -10
+        pts = [np.array([-.55265, -31.9786, -19.0225]), np.array([48.59735, -63.3286, -60.07256]),
+               np.array([193.5974, -55.0786, -46.32256]), np.array([369.2474, 35.32137, -62.5725]),
+               np.array([541.3474, 143.6714, -32.07256])]
+
+        quad_pt = np.array(list((self.quad_state.x_val, self.quad_state.y_val, self.quad_state.z_val)))
+
+        if self.collision_info.has_collided:
+            reward = -100
+        else:
+            dist = 10000000
+            for i in range(0, len(pts) - 1):
+                dist = min(dist, np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1]))) / np.linalg.norm(
+                    pts[i] - pts[i + 1]))
+
+            # print(dist)
+            if dist > thresh_dist:
+                reward = -10
+            else:
+                reward_dist = (math.exp(-beta * dist) - 0.5)
+                reward_speed = (np.linalg.norm([self.quad_vel.x_val, self.quad_vel.y_val, self.quad_vel.z_val]) - 0.5)
+                reward = reward_dist + reward_speed
+
+        return reward
+
+    def isDone(reward):
+        done = 0
+        if reward <= -10:
+            done = 1
+        return done
+
     def run(self):
         num_episodes = 50
         for i_episode in range(num_episodes):
@@ -493,7 +531,9 @@ class DroneDQN(Drone):
             for t in count():
                 # Select and perform an action
                 action = self.select_action(state)
-                _, reward, done, _ = env.step(action.item())
+                reward = self.compute_reward()
+                done = self.isDone(reward)
+                #_, reward, done, _ = env.step(action.item())
                 reward = torch.tensor([reward], device=self.device)
 
                 # Observe new state
