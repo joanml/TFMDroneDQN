@@ -20,6 +20,10 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
+import numpy as np
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
+import time
 
 class State:
     Stop = 0
@@ -171,6 +175,8 @@ class Drone():
         self.client.confirmConnection()
         self.setInfo(n=n, L1=L1, L2=L2, GPS=GPS)
         print(self.nombre, " Conectado")
+
+
     def reset_env(self):
         self.client.reset()
 
@@ -189,7 +195,7 @@ class Drone():
         landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
         if landed == airsim.LandedState.Landed:
             print(self.nombre, " taking off...")
-            self.client.takeoffAsync(vehicle_name=self.nombre)
+            self.client.takeoffAsync(vehicle_name=self.nombre).join()
         else:
             print(self.nombre, " already flying...")
             self.client.hoverAsync(vehicle_name=self.nombre).join()
@@ -213,15 +219,99 @@ class Drone():
 
         # reshape array of floats to array of [X,Y,Z]
         points = np.array(data.point_cloud, dtype=np.dtype('f4'))
+        print('reshape',int(points.shape[0] / 3))
+        if int(points.shape[0] / 3) == 0:
+            print(points)
         points = np.reshape(points, (int(points.shape[0] / 3), 3))
 
         return points
 
-    @property
     def getLidar1(self):
         info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
+        print('Lidar, info OK')
         points = self.parse_lidarData(info)
+        print('Lidar, point OK')
+        #x,y = self.lidar2XY(points)
         return points
+
+    def lidar2XY(lidar):
+        x = list()
+        y = list()
+        for m in lidar:
+            # print(m[1],m[0])
+            x.append(m[1])
+            y.append(m[0])
+
+        x = np.asarray(x)
+        y = np.asarray(y)
+        print('Lidar, 2XY OK')
+
+        return (x, y)
+
+    def xy2Image(x, y):
+        fig = Figure()  # figsize=(5, 5), dpi=100)
+        canvas = FigureCanvasAgg(fig)
+        ax = fig.add_subplot(111)
+        ax.scatter(x, y)
+        ax.plot(x, y, '-o')
+        ax.axis('off')
+        canvas.draw()
+        s, (width, height) = canvas.print_to_buffer()
+        # print(width, height)
+        from PIL import Image
+        im = Image.frombytes("RGBA", (width, height), s)
+        # im.show()
+        print('Lidar, 2Img OK')
+        return im
+
+    def getLidar1Img(self):
+        lidar = self.getLidar1()
+        print('lidar, getLidar1Img OK')
+
+        (x, y) = self.lidar2XY(lidar)
+        print('x, y, getLidar1Img OK')
+        im = self.xy2Image(x, y)
+        print('im, getLidar1Img OK')
+        return im
+
+    def getLidar(self):
+        info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
+        print(len(info.point_cloud),info.point_cloud)
+        while len(info.point_cloud) < 4:
+            time.sleep(0.5)
+            info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
+            print(len(info.point_cloud))
+        print('Lidar, info OK')
+
+        points = self.parse_lidarData(info)
+
+        print('Lidar, point OK')
+        x = list()
+        y = list()
+        for m in points:
+            # print(m[1],m[0])
+            x.append(m[1])
+            y.append(m[0])
+
+        x = np.asarray(x)
+        y = np.asarray(y)
+        print('Lidar, 2XY OK')
+        fig = Figure()  # figsize=(5, 5), dpi=100)
+        canvas = FigureCanvasAgg(fig)
+        ax = fig.add_subplot(111)
+        ax.scatter(x, y)
+        ax.plot(x, y, '-o')
+        ax.axis('off')
+        canvas.draw()
+        s, (width, height) = canvas.print_to_buffer()
+        # print(width, height)
+        from PIL import Image
+        im = Image.frombytes("RGBA", (width, height), s)
+        # im.show()
+
+        pix = np.array(im)!!!!!
+        print('Lidar, 2Img OK')
+        return pix
 
     def getCollision(self):
         return self.client.getCollisionInfo(vehicle_name=self.nombre)
@@ -368,7 +458,7 @@ class Slave(Drone):
 
 
 class DroneDQN(Drone):
-    def __init__(self, n, L1,L2,GPS,input_shape, nb_actions,
+    def __init__(self, n, L1,L2,GPS,input_shape=(4,102,3),
                  gamma=0.99, eps_start=1,eps_end = 0.1,eps_decay=1000000, explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 1000000),
                  learning_rate=0.00025, momentum=0.95, minibatch_size=32,
                  memory_size=500000, train_after=10000, train_interval=4, target_update_interval=10000,
@@ -386,25 +476,10 @@ class DroneDQN(Drone):
         self.EPS_END = eps_end
         self.EPS_DECAY = eps_decay
         self.TARGET_UPDATE = target_update_interval
-
-        lidar = self.getLidar1()
-        x, y = self.lidar2XY(lidar)
-
-        self.init_screen  = self.xy2Image(x, y)
-        _, _, screen_height, screen_width = self.init_screen.shape
-
+        self.input_shape = input_shape
         self.n_actions = num_actions
-        self.policy_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
-        self.target_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
-        self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.target_net.eval()
 
-        self.optimizer = optim.RMSprop(self.policy_net.parameters())
-        self.memory = ReplayMemory(10000)
 
-        self.steps_done = 0
-
-        self.episode_durations = []
 
 
     def select_action(self,state):
@@ -521,13 +596,40 @@ class DroneDQN(Drone):
         return done
 
     def run(self):
+
+        #x, y = self.getLidar1()
+
+
+        self.init_screen = self.getLidar()
+        print('Lidar IMG, RUN OK')
+
+        [screen_height, screen_width] = self.init_screen.size
+
+        self.policy_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
+        print('policy_net')
+        self.target_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
+        print('target_net')
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        print('load_state_dict')
+        self.target_net.eval()
+        print('eval')
+
+        self.optimizer = optim.RMSprop(self.policy_net.parameters())
+        print('optimizer')
+        self.memory = ReplayMemory(10000)
+        print('memory')
+        self.steps_done = 0
+
+        self.episode_durations = []
+
         num_episodes = 50
+        print('Empiezan los episodios')
         for i_episode in range(num_episodes):
             # Initialize the environment and state
             self.client.reset()
-            last_screen = self.getLidar1()
-            current_screen = self.getLidar1()
-            state = current_screen - last_screen
+            last_screen = self.getLidar()
+            current_screen = self.getLidar()
+            state = np.subtract(current_screen, last_screen)
             for t in count():
                 # Select and perform an action
                 action = self.select_action(state)
@@ -538,7 +640,7 @@ class DroneDQN(Drone):
 
                 # Observe new state
                 last_screen = current_screen
-                current_screen = self.getLidar1()
+                current_screen = self.getLidar()
                 if not done:
                     next_state = current_screen - last_screen
                 else:

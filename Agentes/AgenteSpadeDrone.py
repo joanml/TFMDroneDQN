@@ -139,33 +139,10 @@ class ReceiverAgent(Agent):
             await self.agent.stop()
 
 
-def lidar2XY(lidar):
-    x = list()
-    y = list()
-    for m in lidar:
-        # print(m[1],m[0])
-        x.append(m[1])
-        y.append(m[0])
-
-    x = np.asarray(x)
-    y = np.asarray(y)
-    return x,y
 
 
-def xy2Image(x, y):
-    fig = Figure()  # figsize=(5, 5), dpi=100)
-    canvas = FigureCanvasAgg(fig)
-    ax = fig.add_subplot(111)
-    ax.scatter(x, y)
-    ax.plot(x, y, '-o')
-    ax.axis('off')
-    canvas.draw()
-    s, (width, height) = canvas.print_to_buffer()
-    # print(width, height)
-    from PIL import Image
-    im = Image.frombytes("RGBA", (width, height), s)
-    #im.show()
-    return im
+
+
 
 class DQNAgent(Agent):
     def __init__(self, config):
@@ -198,6 +175,8 @@ class DQNAgent(Agent):
 
         async def run(self):
             print("DQNAgent run")
+            self.drone.run()
+            '''
             ##response = self.drone.getLidar1()
 
             lidar = self.drone.getLidar1
@@ -207,7 +186,7 @@ class DQNAgent(Agent):
             im = xy2Image(x,y)
             im.show()
 
-
+            '''
 
             #im = Image.fromarray(np.uint8(cm.gist_earth(s) * 255))
 
@@ -225,7 +204,7 @@ class DQNAgent(Agent):
 
             #sleep(0.5)
             '''
-            self.drone.moveDelante(self.config.mov, self.config.vel)
+            #self.drone.moveDelante(self.config.mov, self.config.vel)
             # plt.close()
 
         async def on_end(self):
