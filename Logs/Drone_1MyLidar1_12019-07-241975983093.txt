@@ -1,0 +1,9 @@
+<LidarData> {   'point_cloud': [   0.0],
+    'pose': <Pose> {   'orientation': <Quaternionr> {   'w_val': 1.0,
+    'x_val': 0.0,
+    'y_val': 0.0,
+    'z_val': 0.0},
+    'position': <Vector3r> {   'x_val': 0.0,
+    'y_val': 0.0,
+    'z_val': -6.2943596839904785}},
+    'time_stamp': 1563988075560545280}
