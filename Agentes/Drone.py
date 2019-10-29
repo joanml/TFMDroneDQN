@@ -35,9 +35,7 @@ class State:
 
 
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
-resize = T.Compose([T.ToPILImage(),
-                    T.Resize(40, interpolation=Image.CUBIC),
-                    T.ToTensor()])
+
 
 class LinearEpsilonAnnealingExplorer(object):
     """
@@ -177,8 +175,22 @@ class Drone():
         self.client.confirmConnection()
         self.setInfo(n=n, L1=L1, L2=L2, GPS=GPS)
         print(self.nombre, " Conectado")
+
+
     def reset_env(self):
         self.client.reset()
+
+    def setInfo(self, n, L1, L2, GPS):
+        self.nombre = n
+        self.nombreLidar1 = L1
+        self.nombreLidar2 = L2
+        self.nombreGPS = GPS
+        self.client.enableApiControl(True, vehicle_name=self.nombre)
+        self.client.armDisarm(True, vehicle_name=self.nombre)
+
+    def getPosition(self):
+        return self.client.simGetGroundTruthKinematics(vehicle_name=self.nombre).position
+
     def takeoff(self):
         landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
         if landed == airsim.LandedState.Landed:
@@ -187,6 +199,7 @@ class Drone():
         else:
             print(self.nombre, " already flying...")
             self.client.hoverAsync(vehicle_name=self.nombre).join()
+
     def landing(self):
         landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
         if landed == airsim.LandedState.Flying:
@@ -194,7 +207,16 @@ class Drone():
             self.client.landAsync(vehicle_name=self.nombre).join()
         else:
             print(self.nombre, " already landing...")
+
+    def moveTo(self, horizontal, lateral, altura, v):
+        return self.client.moveToPositionAsync(horizontal, lateral, altura, v, vehicle_name=self.nombre).join()
+
+    def moveToAcelerador(self, pitch, roll, throttle, yaw_rate, duration):
+        return self.client.moveByAngleThrottleAsync(pitch=pitch, roll=roll, throttle=throttle, yaw_rate=yaw_rate,
+                                                    duration=duration, vehicle_name=self.nombre).join()
+
     def parse_lidarData(self, data):
+
         # reshape array of floats to array of [X,Y,Z]
         points = np.array(data.point_cloud, dtype=np.dtype('f4'))
         print('reshape',int(points.shape[0] / 3))
@@ -203,26 +225,31 @@ class Drone():
         points = np.reshape(points, (int(points.shape[0] / 3), 3))
 
         return points
-    def getLidar(self):
+
+    def getLidar1(self):
         info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
-        #print(len(info.point_cloud),info.point_cloud)
-        while len(info.point_cloud) < 4:
-            time.sleep(0.5)
-            info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
-            #print(len(info.point_cloud))
-        #print('Lidar, info OK')
+        print('Lidar, info OK')
         points = self.parse_lidarData(info)
-        #print('Lidar, point OK')
+        print('Lidar, point OK')
+        #x,y = self.lidar2XY(points)
+        return points
+
+    def lidar2XY(lidar):
         x = list()
         y = list()
-        for m in points:
+        for m in lidar:
             # print(m[1],m[0])
             x.append(m[1])
             y.append(m[0])
+
         x = np.asarray(x)
         y = np.asarray(y)
-        #print('Lidar, 2XY OK')
-        fig = Figure( figsize=(5, 5), dpi=100)
+        print('Lidar, 2XY OK')
+
+        return (x, y)
+
+    def xy2Image(x, y):
+        fig = Figure()  # figsize=(5, 5), dpi=100)
         canvas = FigureCanvasAgg(fig)
         ax = fig.add_subplot(111)
         ax.scatter(x, y)
@@ -233,74 +260,90 @@ class Drone():
         # print(width, height)
         from PIL import Image
         im = Image.frombytes("RGBA", (width, height), s)
-        if self.vervose:
-            im.show()
-        screen = np.ascontiguousarray(im, dtype=np.float32) / 255
-        screen = torch.from_numpy(screen)
-        # Resize, and add a batch dimension (BCHW)
-        return resize(screen).unsqueeze(0).to(self.device)
+        # im.show()
+        print('Lidar, 2Img OK')
+        return im
+
+    def getLidar1Img(self):
+        lidar = self.getLidar1()
+        print('lidar, getLidar1Img OK')
+
+        (x, y) = self.lidar2XY(lidar)
+        print('x, y, getLidar1Img OK')
+        im = self.xy2Image(x, y)
+        print('im, getLidar1Img OK')
+        return im
+
+    def getLidar(self):
+        info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
+        print(len(info.point_cloud),info.point_cloud)
+        while len(info.point_cloud) < 4:
+            time.sleep(0.5)
+            info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
+            print(len(info.point_cloud))
+        print('Lidar, info OK')
+
+        points = self.parse_lidarData(info)
+
+        print('Lidar, point OK')
+        x = list()
+        y = list()
+        for m in points:
+            # print(m[1],m[0])
+            x.append(m[1])
+            y.append(m[0])
+
+        x = np.asarray(x)
+        y = np.asarray(y)
+        print('Lidar, 2XY OK')
+        fig = Figure()  # figsize=(5, 5), dpi=100)
+        canvas = FigureCanvasAgg(fig)
+        ax = fig.add_subplot(111)
+        ax.scatter(x, y)
+        ax.plot(x, y, '-o')
+        ax.axis('off')
+        canvas.draw()
+        s, (width, height) = canvas.print_to_buffer()
+        # print(width, height)
+        from PIL import Image
+        im = Image.frombytes("RGBA", (width, height), s)
+        # im.show()
+
+        pix = np.array(im)!!!!!
+        print('Lidar, 2Img OK')
+        return pix
+
     def getCollision(self):
         return self.client.getCollisionInfo(vehicle_name=self.nombre)
     def getQuadState(self):
         return self.client.getMultirotorState(vehicle_name=self.nombre).kinematics_estimated.position
     def getQuadVel(self):
         return self.client.getMultirotorState(vehicle_name=self.nombre).kinematics_estimated.linear_velocity
-    def moveDerecha(self, y, vel):
-        posicion = self.getPosition()
-        self.moveTo(int(posicion.x_val), int(posicion.y_val) + y, int(posicion.z_val), vel)
-    def moveIzquierda(self, y, vel):
-        posicion = self.getPosition()
-        self.moveTo(int(posicion.x_val), int(posicion.y_val) - y, int(posicion.z_val), vel)
-        #print("IZQUIERDA", posicion)
-    def moveDelante(self,x,vel):
-        posicion = self.getPosition()
-        self.moveTo(int(posicion.x_val) + x, int(posicion.y_val), int(posicion.z_val), vel)
-    def moveAtras(self,x,vel):
-        posicion = self.getPosition()
-        self.moveTo(int(posicion.x_val) - x, int(posicion.y_val), int(posicion.z_val), vel)
-    def setInfo(self, n, L1, L2, GPS):
-        self.nombre = n
-        self.nombreLidar1 = L1
-        self.nombreLidar2 = L2
-        self.nombreGPS = GPS
-        self.client.enableApiControl(True, vehicle_name=self.nombre)
-        self.client.armDisarm(True, vehicle_name=self.nombre)
-    def moveArriba(self,z, vel):
-        posicion = self.getPosition()
-        if posicion.z_val - z > -50:
-            self.moveTo(int(posicion.x_val), int(posicion.y_val), int(posicion.z_val) - z, vel)
-        else:
-            self.moveTo(int(posicion.x_val), int(posicion.y_val), -50, vel)
-    def moveAbajo(self,z,vel):
-        posicion = self.getPosition()
-        if posicion.z_val + z < 0:
-            self.moveTo(int(posicion.x_val), int(posicion.y_val), int(posicion.z_val) + z, vel)
-        else:
-            self.moveTo(int(posicion.x_val), int(posicion.y_val), -1, vel)
-    def getPosition(self):
-        return self.client.simGetGroundTruthKinematics(vehicle_name=self.nombre).position
-    def moveTo(self, horizontal, lateral, altura, v):
-        return self.client.moveToPositionAsync(horizontal, lateral, altura, v, vehicle_name=self.nombre).join()
 
 
     # No usadas
-    '''
     def getGps(self):
         gps_data = self.client.getGpsData(gps_name=self.nombreGPS,
                                           vehicle_name=self.nombre)  # self, gps_name=self.nombreGPS, vehicle_name=self.nombre)
         s = pprint.pformat(gps_data)
         return s
+
     def getOrientacion(self):
         return self.client.getOrientation(vehicle_name=self.nombre)
+
     def getAllInfo(self):
         return self.client.getMultirotorState(vehicle_name=self.nombre)
+
     def moveZ(self, Z, velocidad):
         return self.client.moveToZAsync(z=-Z, velocity=velocidad, vehicle_name=self.nombre).join()
+
     def moveVel(self, vx, vy, vz, t):
         return self.client.moveByVelocityAsync(vx=-vx, vy=-vy, vz=-vz, duration=t, vehicle_name=self.nombre).join()
+
     def moveByAngleZ(self, pitch, roll, z, yaw, duration):
         return self.client.moveByAngleZAsync(pitch=pitch, roll=roll, z=z, yaw=yaw, duration=duration,
                                              vehicle_name=self.nombre).join()
+
     def saveImage(self):
         responses = self.client.simGetImages([ImageRequest("0", airsim.ImageType.Scene, False, False)],
                                              vehicle_name=self.nombre)
@@ -325,6 +368,7 @@ class Drone():
                                           str(dt.minute) +
                                           str(dt.second) +
                                           str(dt.microsecond) + '.png'), img_rgb)
+
     def getImage(self):
         responses =  self.client.simGetImages([airsim.ImageRequest(3, airsim.ImageType.DepthPerspective, True, False)])
         img1d = np.array(responses[0].image_data_float, dtype=np.float)
@@ -333,6 +377,7 @@ class Drone():
         png_image = self.client.simGetImage("0", airsim.ImageType.Scene, vehicle_name=self.nombre)
 
         print(png_image)
+
     def getLidar2(self):
         lindar = self.client.getLidarData(lidar_name=self.nombreLidar2, vehicle_name=self.nombre)
 
@@ -366,74 +411,58 @@ class Drone():
         self.client.moveToPositionAsync(0, 0, z, 1).join()
         # return self.client.moveByAngleThrottleAsync(vehicle_name=self.nombre, duration=(angulo * 3)/360, yaw_rate=angulo,throttle=0,roll=0,pitch=0).join()
         # yaw_rate=angulo, duration=(angulo * 3) / 360, vehicle_name = self.nombre).join()
+
     def followMe(self, x, y, z, v):
         myPosition = self.getPosition()
         # distancia = np.linalg.norm(a-b)
 
         self.moveTo(x, y, z, v)
-    def moveToAcelerador(self, pitch, roll, throttle, yaw_rate, duration):
-        return self.client.moveByAngleThrottleAsync(pitch=pitch, roll=roll, throttle=throttle, yaw_rate=yaw_rate,
-                                                    duration=duration, vehicle_name=self.nombre).join()
-    def getLidar1(self):
-        info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
-        print('Lidar, info OK')
-        points = self.parse_lidarData(info)
-        print('Lidar, point OK')
-        #x,y = self.lidar2XY(points)
-        return points
-    def lidar2XY(lidar):
-        x = list()
-        y = list()
-        for m in lidar:
-            # print(m[1],m[0])
-            x.append(m[1])
-            y.append(m[0])
 
-        x = np.asarray(x)
-        y = np.asarray(y)
-        print('Lidar, 2XY OK')
+    def moveDerecha(self, y, vel):
+        posicion = self.getPosition()
+        self.moveTo(int(posicion.x_val), int(posicion.y_val) + y, int(posicion.z_val), vel)
+    def moveIzquierda(self, y, vel):
+        posicion = self.getPosition()
+        self.moveTo(int(posicion.x_val), int(posicion.y_val) - y, int(posicion.z_val), vel)
+        #print("IZQUIERDA", posicion)
+    def moveDelante(self,x,vel):
+        posicion = self.getPosition()
+        self.moveTo(int(posicion.x_val) + x, int(posicion.y_val), int(posicion.z_val), vel)
+    def moveAtras(self,x,vel):
+        posicion = self.getPosition()
+        self.moveTo(int(posicion.x_val) - x, int(posicion.y_val), int(posicion.z_val), vel)
+    def moveArriba(self,z, vel):
+        posicion = self.getPosition()
+        if posicion.z_val - z > -50:
+            self.moveTo(int(posicion.x_val), int(posicion.y_val), int(posicion.z_val) - z, vel)
+        else:
+            self.moveTo(int(posicion.x_val), int(posicion.y_val), -50, vel)
+    def moveAbajo(self,z,vel):
+        posicion = self.getPosition()
+        if posicion.z_val + z < 0:
+            self.moveTo(int(posicion.x_val), int(posicion.y_val), int(posicion.z_val) + z, vel)
+        else:
+            self.moveTo(int(posicion.x_val), int(posicion.y_val), -1, vel)
 
-        return (x, y)
-    def xy2Image(x, y):
-        fig = Figure()  # figsize=(5, 5), dpi=100)
-        canvas = FigureCanvasAgg(fig)
-        ax = fig.add_subplot(111)
-        ax.scatter(x, y)
-        ax.plot(x, y, '-o')
-        ax.axis('off')
-        canvas.draw()
-        s, (width, height) = canvas.print_to_buffer()
-        # print(width, height)
-        from PIL import Image
-        im = Image.frombytes("RGBA", (width, height), s)
-        # im.show()
-        print('Lidar, 2Img OK')
-        return im
-    def getLidar1Img(self):
-        lidar = self.getLidar1()
-        print('lidar, getLidar1Img OK')
-
-        (x, y) = self.lidar2XY(lidar)
-        print('x, y, getLidar1Img OK')
-        im = self.xy2Image(x, y)
-        print('im, getLidar1Img OK')
-        return im
-    '''
 
 class Master(Drone):
     def __init__(self, jidSlave, n, L1, L2, GPS):
         self.iniciar_drone(n=n, L1=L1, L2=L2, GPS=GPS)
         print(self.nombre, " Ha iniciado como Master")
+
+
 class Slave(Drone):
     def __init__(self, n, L1, L2, GPS):
         self.iniciar_drone(n=n, L1=L1, L2=L2, GPS=GPS)
         print(self.nombre, " Ha iniciado como Slave")
+
+
 class DroneDQN(Drone):
     def __init__(self, n, L1,L2,GPS,input_shape=(4,102,3),
                  gamma=0.99, eps_start=1,eps_end = 0.1,eps_decay=1000000, explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 1000000),
                  learning_rate=0.00025, momentum=0.95, minibatch_size=32,
                  memory_size=500000, train_after=10000, train_interval=4, target_update_interval=10000,
-                 monitor=True, num_actions = 4, vervose = False):
+                 monitor=True, num_actions = 4):
 
         # if gpu is to be used
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -449,7 +478,9 @@ class DroneDQN(Drone):
         self.TARGET_UPDATE = target_update_interval
         self.input_shape = input_shape
         self.n_actions = num_actions
-        self.vervose = vervose
+
+
+
 
     def select_action(self,state):
         global steps_done
@@ -464,48 +495,6 @@ class DroneDQN(Drone):
                 return self.policy_net(state).max(1)[1].view(1, 1)
         else:
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
-    def act(self, state):
-        """ This allows the agent to select the next action to perform in regard of the current state of the environment.
-        It follows the terminology used in the Nature paper.
-
-        Attributes:
-            state (Tensor[input_shape]): The current environment state
-
-        Returns: Int >= 0 : Next action to do
-        """
-        # Append the state to the short term memory (ie. History)
-        self._history.append(state)
-
-        # If policy requires agent to explore, sample random action
-        if self._explorer.is_exploring(self._num_actions_taken):
-            action = self._explorer(self.nb_actions)
-        else:
-            # Use the network to output the best action
-            env_with_history = self._history.value
-            q_values = self._action_value_net.eval(
-                # Append batch axis with only one sample to evaluate
-                env_with_history.reshape((1,) + env_with_history.shape)
-            )
-
-            self._episode_q_means.append(np.mean(q_values))
-            self._episode_q_stddev.append(np.std(q_values))
-
-            # Return the value maximizing the expected reward
-            action = q_values.argmax()
-
-        # Keep track of interval action counter
-        self._num_actions_taken += 1
-        return action
-
-    def interpret_action(self,action):
-        if action == 0:
-            self.moveDerecha()
-        elif action == 1:
-            self.moveIzquierda()
-        elif action == 2:
-            self.moveDelante()
-        elif action == 3:
-            self.moveAtras()
 
     def plot_durations(self):
         plt.figure(2)
@@ -606,16 +595,16 @@ class DroneDQN(Drone):
             done = 1
         return done
 
-    def start(self):
+    def run(self):
 
         #x, y = self.getLidar1()
 
 
         self.init_screen = self.getLidar()
-        print('Lidar IMG, start OK')
+        print('Lidar IMG, RUN OK')
 
-        _, _, screen_height, screen_width = self.init_screen.shape
-        print([screen_height, screen_width])
+        [screen_height, screen_width] = self.init_screen.size
+
         self.policy_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
         print('policy_net')
         self.target_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
@@ -633,41 +622,44 @@ class DroneDQN(Drone):
 
         self.episode_durations = []
 
-    def run(self):
-        # Initialize the environment and state
-        self.client.reset()
-        last_screen = self.getLidar()
-        current_screen = self.getLidar()
-        state = np.subtract(current_screen, last_screen)
-        for t in count():
-            # Select and perform an action
-            action = self.select_action(state)
-            reward = self.compute_reward()
-            done = self.isDone(reward)
-            #_, reward, done, _ = env.step(action.item())
-            reward = torch.tensor([reward], device=self.device)
-
-            # Observe new state
-            last_screen = current_screen
+        num_episodes = 50
+        print('Empiezan los episodios')
+        for i_episode in range(num_episodes):
+            # Initialize the environment and state
+            self.client.reset()
+            last_screen = self.getLidar()
             current_screen = self.getLidar()
-            if not done:
-                next_state = current_screen - last_screen
-            else:
-                next_state = None
+            state = np.subtract(current_screen, last_screen)
+            for t in count():
+                # Select and perform an action
+                action = self.select_action(state)
+                reward = self.compute_reward()
+                done = self.isDone(reward)
+                #_, reward, done, _ = env.step(action.item())
+                reward = torch.tensor([reward], device=self.device)
 
-            # Store the transition in memory
-            self.memory.push(state, action, next_state, reward)
+                # Observe new state
+                last_screen = current_screen
+                current_screen = self.getLidar()
+                if not done:
+                    next_state = current_screen - last_screen
+                else:
+                    next_state = None
 
-            # Move to the next state
-            state = next_state
+                # Store the transition in memory
+                self.memory.push(state, action, next_state, reward)
 
-            # Perform one step of the optimization (on the target network)
-            self.optimize_model()
-            if done:
-                self.episode_durations.append(t + 1)
-                self.plot_durations()
-                break
-        # Update the target network, copying all weights and biases in DQN
-        if i_episode % self.TARGET_UPDATE == 0:
-            self.target_net.load_state_dict(self.policy_net.state_dict())
+                # Move to the next state
+                state = next_state
 
+                # Perform one step of the optimization (on the target network)
+                self.optimize_model()
+                if done:
+                    self.episode_durations.append(t + 1)
+                    self.plot_durations()
+                    break
+            # Update the target network, copying all weights and biases in DQN
+            if i_episode % self.TARGET_UPDATE == 0:
+                self.target_net.load_state_dict(self.policy_net.state_dict())
+
+        print('Complete')

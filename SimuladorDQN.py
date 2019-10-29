@@ -7,9 +7,7 @@ from Agentes.AgenteSpadeDrone import Config, DQNAgent
 if __name__ == "__main__":
 
     jidDrone = "senderDroneAgent1@gtirouter.dsic.upv.es"
-    DroneConfig = Config(jidDrone, "123", "Drone_1", "MyLidar1_1", 2,2 ,
-                         vervose=True,
-                         num_episodes = 50)
+    DroneConfig = Config(jidDrone, "123", "Drone_1", "MyLidar1_1", "MyLidar1_2", "GPS_1", 2,2 )
 
     dqndrone = DQNAgent(DroneConfig)
 
