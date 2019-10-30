@@ -12,7 +12,18 @@ from Agentes.Drone import Master, Slave, DroneDQN
 
 
 class Config():
-    def __init__(self, jid, password, name, lidar1,num_episodes=0, lidar2='', gps='',  jidSlave="", vel=2, mov=2, vervose = False):
+    def __init__(self,
+                 jid,
+                 password,
+                 name,
+                 lidar1,
+                 lidar2='',
+                 gps='',
+                 jidSlave="",
+                 vel=2,
+                 mov=2,
+                 vervose= False,
+                 num_episodes=0):
         self.jid = jid
         self.password = password
         self.jidSlave = jidSlave
@@ -165,24 +176,24 @@ class DQNAgent(Agent):
             self.drone = DroneDQN(n=self.config.name,
                                   L1=self.config.lidar1,
                                   L2=self.config.lidar2,
-                                  GPS=self.config.gps,
-                                  vervose=self.config.vervose)
+                                  GPS=self.config.gps)
             self.drone.takeoff()
             self.drone.moveArriba(5, self.config.vel)
             print("DQNAgent takeoff")
             self.drone.start()
-            self.num_episodes = self.config.num_episodes
+            #self.num_episodes = self.config.num_episodes
             print('Empiezan los episodios')
 
         async def run(self):
-            print("DQNAgent run", self.num_episodes)
+            print("DQNAgent run")#, self.num_episodes)
 
-            self.run()
+            img = self.drone.getLidar()
 
-            self.num_episodes -= 1
-            if self.num_episodes <= 0:
-                print('Complete')
-                self.kill(exit_code=10)
+            self.drone.moveDelante(self.config.mov,self.config.vel)
+            #self.num_episodes -= 1
+            #if self.num_episodes <= 0:
+            #    print('Complete')
+            #    self.kill(exit_code=10)
 
 
         async def on_end(self):

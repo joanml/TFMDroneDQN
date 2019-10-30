@@ -121,6 +121,122 @@ class History(object):
         """
         self._buffer.fill(0)
 class ReplayMemory(object):
+    """
+    ReplayMemory keeps track of the environment dynamic.
+    We store all the transitions (s(t), action, s(t+1), reward, done).
+    The replay memory allows us to efficiently sample mini-batches from it, and generate the correct state representation
+    (w.r.t the number of previous frames needed).
+    """
+    def __init__(self, size, sample_shape, history_length=4):
+        self._pos = 0
+        self._count = 0
+        self._max_size = size
+        self._history_length = max(1, history_length)
+        self._state_shape = sample_shape
+        self._states = np.zeros((size,) + sample_shape, dtype=np.float32)
+        self._actions = np.zeros(size, dtype=np.uint8)
+        self._rewards = np.zeros(size, dtype=np.float32)
+        self._terminals = np.zeros(size, dtype=np.float32)
+
+    def __len__(self):
+        """ Returns the number of items currently present in the memory
+        Returns: Int >= 0
+        """
+        return self._count
+
+    def append(self, state, action, reward, done):
+        """ Appends the specified transition to the memory.
+
+        Attributes:
+            state (Tensor[sample_shape]): The state to append
+            action (int): An integer representing the action done
+            reward (float): An integer representing the reward received for doing this action
+            done (bool): A boolean specifying if this state is a terminal (episode has finished)
+        """
+        assert state.shape == self._state_shape, \
+            'Invalid state shape (required: %s, got: %s)' % (self._state_shape, state.shape)
+
+        self._states[self._pos] = state
+        self._actions[self._pos] = action
+        self._rewards[self._pos] = reward
+        self._terminals[self._pos] = done
+
+        self._count = max(self._count, self._pos + 1)
+        self._pos = (self._pos + 1) % self._max_size
+
+    def sample(self, size):
+        """ Generate size random integers mapping indices in the memory.
+            The returned indices can be retrieved using #get_state().
+            See the method #mini-batch() if you want to retrieve samples directly.
+
+        Attributes:
+            size (int): The mini-batch size
+
+        Returns:
+             Indexes of the sampled states ([int])
+        """
+
+        # Local variable access is faster in loops
+        count, pos, history_len, terminals = self._count - 1, self._pos, \
+                                             self._history_length, self._terminals
+        indexes = []
+
+        while len(indexes) < size:
+            index = np.random.randint(history_len, count)
+
+            if index not in indexes:
+
+                # if not wrapping over current pointer,
+                # then check if there is terminal state wrapped inside
+                if not (index >= pos > index - history_len):
+                    if not terminals[(index - history_len):index].any():
+                        indexes.append(index)
+
+        return indexes
+
+    def minibatch(self, size):
+        """ Generate a minibatch with the number of samples specified by the size parameter.
+
+        Attributes:
+            size (int): Minibatch size
+
+        Returns:
+            tuple: Tensor[minibatch_size, input_shape...], [int], [float], [bool]
+        """
+        indexes = self.sample(size)
+
+        pre_states = np.array([self.get_state(index) for index in indexes], dtype=np.float32)
+        post_states = np.array([self.get_state(index + 1) for index in indexes], dtype=np.float32)
+        actions = self._actions[indexes]
+        rewards = self._rewards[indexes]
+        dones = self._terminals[indexes]
+
+        return pre_states, actions, post_states, rewards, dones
+
+    def get_state(self, index):
+        """
+        Return the specified state with the replay memory. A state consists of
+        the last `history_length` perceptions.
+
+        Attributes:
+            index (int): State's index
+
+        Returns:
+            State at specified index (Tensor[history_length, input_shape...])
+        """
+        if self._count == 0:
+            raise IndexError('Empty Memory')
+
+        index %= self._count
+        history_length = self._history_length
+
+        # If index > history_length, take from a slice
+        if index >= history_length:
+            return self._states[(index - (history_length - 1)):index + 1, ...]
+        else:
+            indexes = np.arange(index - history_length + 1, index + 1)
+            return self._states.take(indexes, mode='wrap', axis=0)
+class Replay_Memory(object):
 
     def __init__(self, capacity):
         self.capacity = capacity
@@ -140,42 +256,35 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
-class DQN(nn.Module):
+class DQN(nn.Sequential):
 
-    def __init__(self, h, w, outputs):
+    def __init__(self, outputs):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
-        self.bn3 = nn.BatchNorm2d(32)
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=5, stride=2)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.mp1 = nn.MaxPool2d(2)
+        self.conv2 = nn.Conv2d(32, 8, kernel_size=5, stride=2)
+        self.bn2 = nn.BatchNorm2d(8)
+        self.mp2 = nn.MaxPool2d(2)
+        self.conv3 = nn.Conv2d(8, 4, kernel_size=5, stride=2)
+        self.bn3 = nn.BatchNorm2d(4)
+        self.head = nn.Linear(4,outputs)
 
-        # Number of Linear input connections depends on output of conv2d layers
-        # and therefore the input image size, so compute it.
-        def conv2d_size_out(size, kernel_size = 5, stride = 2):
-            return (size - (kernel_size - 1) - 1) // stride  + 1
-        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
-        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
-        linear_input_size = convw * convh * 32
-        self.head = nn.Linear(linear_input_size, outputs)
-
-    # Called with either one element to determine next action, or a batch
-    # during optimization. Returns tensor([[left0exp,right0exp]...]).
     def forward(self, x):
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.mp1(self.bn1(self.conv1(x))))
+        x = F.relu(self.mp2(self.bn2(self.conv2(x))))
         x = F.relu(self.bn3(self.conv3(x)))
-        return self.head(x.view(x.size(0), -1))
+        return F.relu(self.head(x))
 
 class Drone():
 
     # Funcionan
-    def iniciar_drone(self, n, L1, L2, GPS, ):
+    def iniciar_drone(self, n, L1, L2, GPS, vervose=False ):
         airsim.YawMode.is_rate = False
         self.client = airsim.MultirotorClient()
         self.client.confirmConnection()
         self.setInfo(n=n, L1=L1, L2=L2, GPS=GPS)
+        self.vervose = vervose
         print(self.nombre, " Conectado")
     def reset_env(self):
         self.client.reset()
@@ -233,8 +342,9 @@ class Drone():
         # print(width, height)
         from PIL import Image
         im = Image.frombytes("RGBA", (width, height), s)
-        if self.vervose:
+        if True:
             im.show()
+            print(width, height)
         screen = np.ascontiguousarray(im, dtype=np.float32) / 255
         screen = torch.from_numpy(screen)
         # Resize, and add a batch dimension (BCHW)
@@ -429,16 +539,16 @@ class Slave(Drone):
         self.iniciar_drone(n=n, L1=L1, L2=L2, GPS=GPS)
         print(self.nombre, " Ha iniciado como Slave")
 class DroneDQN(Drone):
-    def __init__(self, n, L1,L2,GPS,input_shape=(4,102,3),
+    def __init__(self, n, L1,L2,GPS, vervose = False, input_shape=(4,102,3),
                  gamma=0.99, eps_start=1,eps_end = 0.1,eps_decay=1000000, explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 1000000),
                  learning_rate=0.00025, momentum=0.95, minibatch_size=32,
                  memory_size=500000, train_after=10000, train_interval=4, target_update_interval=10000,
-                 monitor=True, num_actions = 4, vervose = False):
+                 monitor=True, num_actions = 4 ):
 
         # if gpu is to be used
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.iniciar_drone(n=n,L1=L1,L2=L2,GPS=GPS)
+        self.iniciar_drone(n=n,L1=L1,L2=L2,GPS=GPS,vervose=vervose)
         print(self.nombre, "Ha iniciado")
 
         self.BATCH_SIZE = minibatch_size
@@ -450,6 +560,20 @@ class DroneDQN(Drone):
         self.input_shape = input_shape
         self.n_actions = num_actions
         self.vervose = vervose
+
+        self._train_after = train_after
+        self._train_interval = train_interval
+        self._target_update_interval = target_update_interval
+
+        self._explorer = explorer
+        self._minibatch_size = minibatch_size
+        self._history = History(input_shape)
+        self._memory = ReplayMemory(memory_size, input_shape[1:], 4)
+        self._num_actions_taken = 0
+
+        # Metrics accumulator
+        self._episode_rewards, self._episode_q_means, self._episode_q_stddev = [], [], []
+
 
     def select_action(self,state):
         global steps_done
@@ -464,6 +588,7 @@ class DroneDQN(Drone):
                 return self.policy_net(state).max(1)[1].view(1, 1)
         else:
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
+
     def act(self, state):
         """ This allows the agent to select the next action to perform in regard of the current state of the environment.
         It follows the terminology used in the Nature paper.
@@ -496,16 +621,15 @@ class DroneDQN(Drone):
         # Keep track of interval action counter
         self._num_actions_taken += 1
         return action
-
     def interpret_action(self,action):
         if action == 0:
-            self.moveDerecha()
+            self.moveDerecha(self.config.mov,self.config.vel)
         elif action == 1:
-            self.moveIzquierda()
+            self.moveIzquierda(self.config.mov,self.config.vel)
         elif action == 2:
-            self.moveDelante()
+            self.moveDelante(self.config.mov,self.config.vel)
         elif action == 3:
-            self.moveAtras()
+            self.moveAtras(self.config.mov,self.config.vel)
 
     def plot_durations(self):
         plt.figure(2)
@@ -600,6 +724,7 @@ class DroneDQN(Drone):
 
         return reward
 
+
     def isDone(reward):
         done = 0
         if reward <= -10:
@@ -616,22 +741,24 @@ class DroneDQN(Drone):
 
         _, _, screen_height, screen_width = self.init_screen.shape
         print([screen_height, screen_width])
-        self.policy_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
-        print('policy_net')
-        self.target_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
-        print('target_net')
+        self.policy_net = DQN( self.n_actions).to(self.device)
+        print('policy_net',self.policy_net)
+        self.target_net = DQN( self.n_actions).to(self.device)
+        print('target_net',self.target_net)
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        print('load_state_dict')
+        #print('load_state_dict')
         self.target_net.eval()
-        print('eval')
+        #print('eval')
 
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
-        print('optimizer')
+        #print('optimizer')
         self.memory = ReplayMemory(10000)
-        print('memory')
+        #print('memory')
         self.steps_done = 0
 
         self.episode_durations = []
+
+
 
     def run(self):
         # Initialize the environment and state
@@ -641,7 +768,7 @@ class DroneDQN(Drone):
         state = np.subtract(current_screen, last_screen)
         for t in count():
             # Select and perform an action
-            action = self.select_action(state)
+            action = self.act(state)
             reward = self.compute_reward()
             done = self.isDone(reward)
             #_, reward, done, _ = env.step(action.item())
@@ -668,6 +795,6 @@ class DroneDQN(Drone):
                 self.plot_durations()
                 break
         # Update the target network, copying all weights and biases in DQN
-        if i_episode % self.TARGET_UPDATE == 0:
-            self.target_net.load_state_dict(self.policy_net.state_dict())
+        #if self.i_episode % self.TARGET_UPDATE == 0:
+        #   self.target_net.load_state_dict(self.policy_net.state_dict())
 
