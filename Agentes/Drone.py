@@ -120,7 +120,7 @@ class History(object):
 
         """
         self._buffer.fill(0)
-class ReplayMemory(object):
+class Replay_Memory(object):
     """
     ReplayMemory keeps track of the environment dynamic.
     We store all the transitions (s(t), action, s(t+1), reward, done).
@@ -236,7 +236,7 @@ class ReplayMemory(object):
         else:
             indexes = np.arange(index - history_length + 1, index + 1)
             return self._states.take(indexes, mode='wrap', axis=0)
-class Replay_Memory(object):
+class ReplayMemory(object):
 
     def __init__(self, capacity):
         self.capacity = capacity
@@ -392,6 +392,11 @@ class Drone():
     def moveTo(self, horizontal, lateral, altura, v):
         return self.client.moveToPositionAsync(horizontal, lateral, altura, v, vehicle_name=self.nombre).join()
 
+    def takeoffPositionStart(self,vel):
+        self.takeoff()
+        self.moveArriba(5, vel)
+        print("DQNAgent takeoff")
+
 
     # No usadas
     '''
@@ -539,11 +544,12 @@ class Slave(Drone):
         self.iniciar_drone(n=n, L1=L1, L2=L2, GPS=GPS)
         print(self.nombre, " Ha iniciado como Slave")
 class DroneDQN(Drone):
-    def __init__(self, n, L1,L2,GPS, vervose = False, input_shape=(4,102,3),
+    def __init__(self, n, L1,L2,GPS, vervose = False,
+                 input_shape=(4,102,3),
                  gamma=0.99, eps_start=1,eps_end = 0.1,eps_decay=1000000, explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 1000000),
                  learning_rate=0.00025, momentum=0.95, minibatch_size=32,
                  memory_size=500000, train_after=10000, train_interval=4, target_update_interval=10000,
-                 monitor=True, num_actions = 4 ):
+                 monitor=True, num_actions=4):
 
         # if gpu is to be used
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -588,6 +594,7 @@ class DroneDQN(Drone):
                 return self.policy_net(state).max(1)[1].view(1, 1)
         else:
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
+        
 
     def act(self, state):
         """ This allows the agent to select the next action to perform in regard of the current state of the environment.
@@ -691,7 +698,9 @@ class DroneDQN(Drone):
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
 
-    def compute_reward(self):
+    def compute_reward(self, action):
+
+        self.interpret_action(action)
 
         self.collision_info = self.getCollision()
         self.quad_state = self.getQuadState()
@@ -709,11 +718,12 @@ class DroneDQN(Drone):
         if self.collision_info.has_collided:
             reward = -100
         else:
+            return np.negative(self.quad_state.y_val) + self.quad_state.x_val
             dist = 10000000
-            for i in range(0, len(pts) - 1):
-                dist = min(dist, np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1]))) / np.linalg.norm(
-                    pts[i] - pts[i + 1]))
-
+            #for i in range(0, len(pts) - 1):
+            #    dist = min(dist, np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1]))) / np.linalg.norm(
+            #        pts[i] - pts[i + 1]))
+            dist = min()
             # print(dist)
             if dist > thresh_dist:
                 reward = -10
@@ -732,53 +742,39 @@ class DroneDQN(Drone):
         return done
 
     def start(self):
-
-        #x, y = self.getLidar1()
-
-
         self.init_screen = self.getLidar()
-        print('Lidar IMG, start OK')
-
         _, _, screen_height, screen_width = self.init_screen.shape
-        print([screen_height, screen_width])
-        self.policy_net = DQN( self.n_actions).to(self.device)
-        print('policy_net',self.policy_net)
-        self.target_net = DQN( self.n_actions).to(self.device)
-        print('target_net',self.target_net)
+        self.policy_net = DQN(self.n_actions).to(self.device)
+        self.target_net = DQN(self.n_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        #print('load_state_dict')
         self.target_net.eval()
-        #print('eval')
-
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
-        #print('optimizer')
         self.memory = ReplayMemory(10000)
-        #print('memory')
         self.steps_done = 0
-
         self.episode_durations = []
 
 
 
     def run(self):
-        # Initialize the environment and state
-        self.client.reset()
-        last_screen = self.getLidar()
-        current_screen = self.getLidar()
-        state = np.subtract(current_screen, last_screen)
+        self.reset_env()
+        self.takeoffPositionStart(self.config.vel)
+
+        self.last_screen = self.getLidar()
+        self.current_screen = self.getLidar()
+        state = torch.tensor(np.subtract(self.current_screen, self.last_screen), device=self.device, dtype=torch.float)
         for t in count():
             # Select and perform an action
-            action = self.act(state)
-            reward = self.compute_reward()
+            action = self.select_action(state)
+            reward = self.compute_reward(action)
             done = self.isDone(reward)
-            #_, reward, done, _ = env.step(action.item())
+            # _, reward, done, _ = env.step(action.item())
             reward = torch.tensor([reward], device=self.device)
 
             # Observe new state
-            last_screen = current_screen
-            current_screen = self.getLidar()
+            self.last_screen = self.current_screen
+            self.current_screen = self.getLidar()
             if not done:
-                next_state = current_screen - last_screen
+                next_state = self.current_screen - self.last_screen
             else:
                 next_state = None
 
@@ -794,7 +790,3 @@ class DroneDQN(Drone):
                 self.episode_durations.append(t + 1)
                 self.plot_durations()
                 break
-        # Update the target network, copying all weights and biases in DQN
-        #if self.i_episode % self.TARGET_UPDATE == 0:
-        #   self.target_net.load_state_dict(self.policy_net.state_dict())
-

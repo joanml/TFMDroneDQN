@@ -1,4 +1,5 @@
 import datetime
+from itertools import count
 
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -9,6 +10,11 @@ from spade.message import Message
 from spade.template import Template
 
 from Agentes.Drone import Master, Slave, DroneDQN
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import torchvision.transforms as T
 
 
 class Config():
@@ -172,28 +178,37 @@ class DQNAgent(Agent):
 
         async def on_start(self):
             print("DQNAgent on_start", self.config.name)
-
             self.drone = DroneDQN(n=self.config.name,
                                   L1=self.config.lidar1,
                                   L2=self.config.lidar2,
                                   GPS=self.config.gps)
-            self.drone.takeoff()
-            self.drone.moveArriba(5, self.config.vel)
-            print("DQNAgent takeoff")
+
+            self.drone.reset_env()
+
             self.drone.start()
-            #self.num_episodes = self.config.num_episodes
+
+            self.num_episodes = self.config.num_episodes
             print('Empiezan los episodios')
 
         async def run(self):
-            print("DQNAgent run")#, self.num_episodes)
+            print("DQNAgent run")
+            # env.reset()
+            self.drone.run()
+            # Update the target network, copying all weights and biases in DQN
+            # if self.i_episode % self.TARGET_UPDATE == 0:
+            #   self.target_net.load_state_dict(self.policy_net.state_dict())
 
-            img = self.drone.getLidar()
+            # last_screen = get_screen()
+            # current_screen = get_screen()
+            # state = current_screen - last_screen
 
-            self.drone.moveDelante(self.config.mov,self.config.vel)
-            #self.num_episodes -= 1
-            #if self.num_episodes <= 0:
-            #    print('Complete')
-            #    self.kill(exit_code=10)
+            # img = self.drone.getLidar()
+            #
+            # self.drone.moveDelante(self.config.mov,self.config.vel)
+            self.num_episodes -= 1
+            if self.num_episodes <= 0:
+                print('Complete')
+                self.kill(exit_code=10)
 
 
         async def on_end(self):
