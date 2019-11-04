@@ -1,37 +1,15 @@
-import os
-import pprint
-from datetime import datetime
-
 import airsim
-import numpy as np
-from airsim import ImageRequest
-from random import randrange
-import math
 import random
-import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 from collections import namedtuple
-from itertools import count
 from PIL import Image
-
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 import time
-
-class State:
-    Stop = 0
-    Armed = 1
-    TakeOff = 2
-    Fly = 3
-    Landing = 4
-    Disarmed = 5
 
 
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
@@ -236,6 +214,7 @@ class Replay_Memory(object):
         else:
             indexes = np.arange(index - history_length + 1, index + 1)
             return self._states.take(indexes, mode='wrap', axis=0)
+
 class ReplayMemory(object):
 
     def __init__(self, capacity):
@@ -260,39 +239,42 @@ class DQN(nn.Sequential):
 
     def __init__(self, outputs):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=5, stride=2)
-        self.bn1 = nn.BatchNorm2d(32)
-        self.mp1 = nn.MaxPool2d(2)
-        self.conv2 = nn.Conv2d(32, 8, kernel_size=5, stride=2)
-        self.bn2 = nn.BatchNorm2d(8)
-        self.mp2 = nn.MaxPool2d(2)
-        self.conv3 = nn.Conv2d(8, 4, kernel_size=5, stride=2)
-        self.bn3 = nn.BatchNorm2d(4)
-        self.head = nn.Linear(4,outputs)
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
+        self.bn1 = nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
+        self.bn3 = nn.BatchNorm2d(32)
+        self.head = nn.Linear(32,outputs)
 
     def forward(self, x):
-        x = F.relu(self.mp1(self.bn1(self.conv1(x))))
-        x = F.relu(self.mp2(self.bn2(self.conv2(x))))
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
         return F.relu(self.head(x))
 
 class Drone():
 
     # Funcionan
-    def iniciar_drone(self, n, L1, L2, GPS, vervose=False ):
+    def iniciar_drone(self, config ):
         airsim.YawMode.is_rate = False
+        self.config = config
         self.client = airsim.MultirotorClient()
         self.client.confirmConnection()
-        self.setInfo(n=n, L1=L1, L2=L2, GPS=GPS)
-        self.vervose = vervose
+        self.setInfo(name=self.config.name, L1=self.config.lidar1, L2=self.config.lidar2, GPS=self.config.gps)
+        self.vervose = self.config.vervose
         print(self.nombre, " Conectado")
     def reset_env(self):
         self.client.reset()
+        time.sleep(1)
+
     def takeoff(self):
         landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
+        print("LandedState: ",airsim.LandedState.Landed)
         if landed == airsim.LandedState.Landed:
             print(self.nombre, " taking off...")
             self.client.takeoffAsync(vehicle_name=self.nombre).join()
+            print(self.nombre, " en el aire...")
         else:
             print(self.nombre, " already flying...")
             self.client.hoverAsync(vehicle_name=self.nombre).join()
@@ -342,15 +324,15 @@ class Drone():
         # print(width, height)
         from PIL import Image
         im = Image.frombytes("RGBA", (width, height), s)
-        if True:
+        if self.vervose:
             im.show()
             print(width, height)
         screen = np.ascontiguousarray(im, dtype=np.float32) / 255
         screen = torch.from_numpy(screen)
         # Resize, and add a batch dimension (BCHW)
-        return resize(screen).unsqueeze(0).to(self.device)
+        return resize(screen).unsqueeze(0).to('cpu')
     def getCollision(self):
-        return self.client.getCollisionInfo(vehicle_name=self.nombre)
+        return self.client.simGetCollisionInfo(vehicle_name=self.nombre)
     def getQuadState(self):
         return self.client.getMultirotorState(vehicle_name=self.nombre).kinematics_estimated.position
     def getQuadVel(self):
@@ -368,8 +350,8 @@ class Drone():
     def moveAtras(self,x,vel):
         posicion = self.getPosition()
         self.moveTo(int(posicion.x_val) - x, int(posicion.y_val), int(posicion.z_val), vel)
-    def setInfo(self, n, L1, L2, GPS):
-        self.nombre = n
+    def setInfo(self, name, L1, L2, GPS):
+        self.nombre = name
         self.nombreLidar1 = L1
         self.nombreLidar2 = L2
         self.nombreGPS = GPS
@@ -535,258 +517,4 @@ class Drone():
         return im
     '''
 
-class Master(Drone):
-    def __init__(self, jidSlave, n, L1, L2, GPS):
-        self.iniciar_drone(n=n, L1=L1, L2=L2, GPS=GPS)
-        print(self.nombre, " Ha iniciado como Master")
-class Slave(Drone):
-    def __init__(self, n, L1, L2, GPS):
-        self.iniciar_drone(n=n, L1=L1, L2=L2, GPS=GPS)
-        print(self.nombre, " Ha iniciado como Slave")
-class DroneDQN(Drone):
-    def __init__(self, n, L1,L2,GPS, vervose = False,
-                 input_shape=(4,102,3),
-                 gamma=0.99, eps_start=1,eps_end = 0.1,eps_decay=1000000, explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 1000000),
-                 learning_rate=0.00025, momentum=0.95, minibatch_size=32,
-                 memory_size=500000, train_after=10000, train_interval=4, target_update_interval=10000,
-                 monitor=True, num_actions=4):
 
-        # if gpu is to be used
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        self.iniciar_drone(n=n,L1=L1,L2=L2,GPS=GPS,vervose=vervose)
-        print(self.nombre, "Ha iniciado")
-
-        self.BATCH_SIZE = minibatch_size
-        self.GAMMA = gamma
-        self.EPS_START = eps_start
-        self.EPS_END = eps_end
-        self.EPS_DECAY = eps_decay
-        self.TARGET_UPDATE = target_update_interval
-        self.input_shape = input_shape
-        self.n_actions = num_actions
-        self.vervose = vervose
-
-        self._train_after = train_after
-        self._train_interval = train_interval
-        self._target_update_interval = target_update_interval
-
-        self._explorer = explorer
-        self._minibatch_size = minibatch_size
-        self._history = History(input_shape)
-        self._memory = ReplayMemory(memory_size, input_shape[1:], 4)
-        self._num_actions_taken = 0
-
-        # Metrics accumulator
-        self._episode_rewards, self._episode_q_means, self._episode_q_stddev = [], [], []
-
-
-    def select_action(self,state):
-        global steps_done
-        sample = random.random()
-        eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * steps_done / self.EPS_DECAY)
-        steps_done += 1
-        if sample > eps_threshold:
-            with torch.no_grad():
-                # t.max(1) will return largest column value of each row.
-                # second column on max result is index of where max element was
-                # found, so we pick action with the larger expected reward.
-                return self.policy_net(state).max(1)[1].view(1, 1)
-        else:
-            return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
-        
-
-    def act(self, state):
-        """ This allows the agent to select the next action to perform in regard of the current state of the environment.
-        It follows the terminology used in the Nature paper.
-
-        Attributes:
-            state (Tensor[input_shape]): The current environment state
-
-        Returns: Int >= 0 : Next action to do
-        """
-        # Append the state to the short term memory (ie. History)
-        self._history.append(state)
-
-        # If policy requires agent to explore, sample random action
-        if self._explorer.is_exploring(self._num_actions_taken):
-            action = self._explorer(self.nb_actions)
-        else:
-            # Use the network to output the best action
-            env_with_history = self._history.value
-            q_values = self._action_value_net.eval(
-                # Append batch axis with only one sample to evaluate
-                env_with_history.reshape((1,) + env_with_history.shape)
-            )
-
-            self._episode_q_means.append(np.mean(q_values))
-            self._episode_q_stddev.append(np.std(q_values))
-
-            # Return the value maximizing the expected reward
-            action = q_values.argmax()
-
-        # Keep track of interval action counter
-        self._num_actions_taken += 1
-        return action
-    def interpret_action(self,action):
-        if action == 0:
-            self.moveDerecha(self.config.mov,self.config.vel)
-        elif action == 1:
-            self.moveIzquierda(self.config.mov,self.config.vel)
-        elif action == 2:
-            self.moveDelante(self.config.mov,self.config.vel)
-        elif action == 3:
-            self.moveAtras(self.config.mov,self.config.vel)
-
-    def plot_durations(self):
-        plt.figure(2)
-        plt.clf()
-        durations_t = torch.tensor(self.episode_durations, dtype=torch.float)
-        plt.title('Training...')
-        plt.xlabel('Episode')
-        plt.ylabel('Duration')
-        plt.plot(durations_t.numpy())
-        # Take 100 episode averages and plot them too
-        if len(durations_t) >= 100:
-            means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-            means = torch.cat((torch.zeros(99), means))
-            plt.plot(means.numpy())
-
-        plt.pause(0.001)  # pause a bit so that plots are updated
-
-    def optimize_model(self):
-        if len(self.memory) < self.BATCH_SIZE:
-            return
-        transitions = self.memory.sample(self.BATCH_SIZE)
-        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-        # detailed explanation). This converts batch-array of Transitions
-        # to Transition of batch-arrays.
-        batch = Transition(*zip(*transitions))
-
-        # Compute a mask of non-final states and concatenate the batch elements
-        # (a final state would've been the one after which simulation ended)
-        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                batch.next_state)), device=self.device, dtype=torch.uint8)
-        non_final_next_states = torch.cat([s for s in batch.next_state
-                                           if s is not None])
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
-
-        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-        # columns of actions taken. These are the actions which would've been taken
-        # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
-
-        # Compute V(s_{t+1}) for all next states.
-        # Expected values of actions for non_final_next_states are computed based
-        # on the "older" target_net; selecting their best reward with max(1)[0].
-        # This is merged based on the mask, such that we'll have either the expected
-        # state value or 0 in case the state was final.
-        next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
-        next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
-        # Compute the expected Q values
-        expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
-
-        # Compute Huber loss
-        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
-
-        # Optimize the model
-        self.optimizer.zero_grad()
-        loss.backward()
-        for param in self.policy_net.parameters():
-            param.grad.data.clamp_(-1, 1)
-        self.optimizer.step()
-
-    def compute_reward(self, action):
-
-        self.interpret_action(action)
-
-        self.collision_info = self.getCollision()
-        self.quad_state = self.getQuadState()
-        self.quad_vel = self.getQuadVel()
-        thresh_dist = 7
-        beta = 1
-
-        z = -10
-        pts = [np.array([-.55265, -31.9786, -19.0225]), np.array([48.59735, -63.3286, -60.07256]),
-               np.array([193.5974, -55.0786, -46.32256]), np.array([369.2474, 35.32137, -62.5725]),
-               np.array([541.3474, 143.6714, -32.07256])]
-
-        quad_pt = np.array(list((self.quad_state.x_val, self.quad_state.y_val, self.quad_state.z_val)))
-
-        if self.collision_info.has_collided:
-            reward = -100
-        else:
-            return np.negative(self.quad_state.y_val) + self.quad_state.x_val
-            dist = 10000000
-            #for i in range(0, len(pts) - 1):
-            #    dist = min(dist, np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1]))) / np.linalg.norm(
-            #        pts[i] - pts[i + 1]))
-            dist = min()
-            # print(dist)
-            if dist > thresh_dist:
-                reward = -10
-            else:
-                reward_dist = (math.exp(-beta * dist) - 0.5)
-                reward_speed = (np.linalg.norm([self.quad_vel.x_val, self.quad_vel.y_val, self.quad_vel.z_val]) - 0.5)
-                reward = reward_dist + reward_speed
-
-        return reward
-
-
-    def isDone(reward):
-        done = 0
-        if reward <= -10:
-            done = 1
-        return done
-
-    def start(self):
-        self.init_screen = self.getLidar()
-        _, _, screen_height, screen_width = self.init_screen.shape
-        self.policy_net = DQN(self.n_actions).to(self.device)
-        self.target_net = DQN(self.n_actions).to(self.device)
-        self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.target_net.eval()
-        self.optimizer = optim.RMSprop(self.policy_net.parameters())
-        self.memory = ReplayMemory(10000)
-        self.steps_done = 0
-        self.episode_durations = []
-
-
-
-    def run(self):
-        self.reset_env()
-        self.takeoffPositionStart(self.config.vel)
-
-        self.last_screen = self.getLidar()
-        self.current_screen = self.getLidar()
-        state = torch.tensor(np.subtract(self.current_screen, self.last_screen), device=self.device, dtype=torch.float)
-        for t in count():
-            # Select and perform an action
-            action = self.select_action(state)
-            reward = self.compute_reward(action)
-            done = self.isDone(reward)
-            # _, reward, done, _ = env.step(action.item())
-            reward = torch.tensor([reward], device=self.device)
-
-            # Observe new state
-            self.last_screen = self.current_screen
-            self.current_screen = self.getLidar()
-            if not done:
-                next_state = self.current_screen - self.last_screen
-            else:
-                next_state = None
-
-            # Store the transition in memory
-            self.memory.push(state, action, next_state, reward)
-
-            # Move to the next state
-            state = next_state
-
-            # Perform one step of the optimization (on the target network)
-            self.optimize_model()
-            if done:
-                self.episode_durations.append(t + 1)
-                self.plot_durations()
-                break

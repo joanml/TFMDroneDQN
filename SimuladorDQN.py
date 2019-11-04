@@ -8,7 +8,7 @@ if __name__ == "__main__":
 
     jidDrone = "senderDroneAgent1@gtirouter.dsic.upv.es"
     DroneConfig = Config(jidDrone, "123", "Drone_1", "MyLidar1_1", 2,2 ,
-                         vervose=True, num_episodes=50)
+                         vervose=False, num_episodes=50)
 
     dqndrone = DQNAgent(DroneConfig)
 

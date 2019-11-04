@@ -1,4 +1,5 @@
 import datetime
+import time
 from itertools import count
 
 import numpy as np
@@ -9,7 +10,9 @@ from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from Agentes.Drone import Master, Slave, DroneDQN
+from Agentes.Master import Master
+from Agentes.Slave import Slave
+from Agentes.DroneDQN import DroneDQN
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -62,11 +65,7 @@ class PeriodicSenderAgent(Agent):
             self.config = config
 
         async def on_start(self):
-            self.drone = Master(jidSlave=self.config.jidSlave,
-                                n=self.config.name,
-                                L1=self.config.lidar1,
-                                L2=self.config.lidar2,
-                                GPS=self.config.gps)
+            self.drone = Master(self.config)
             self.drone.takeoff()
             initial_possition = self.drone.getPosition()
             print("Initial Possition: " + str(initial_possition) + " GPS: ")  # + str(self.drone.getGps()))
@@ -178,12 +177,9 @@ class DQNAgent(Agent):
 
         async def on_start(self):
             print("DQNAgent on_start", self.config.name)
-            self.drone = DroneDQN(n=self.config.name,
-                                  L1=self.config.lidar1,
-                                  L2=self.config.lidar2,
-                                  GPS=self.config.gps)
+            self.drone = DroneDQN(config=self.config)
 
-            self.drone.reset_env()
+            #self.drone.reset_env()
 
             self.drone.start()
 
@@ -193,7 +189,49 @@ class DQNAgent(Agent):
         async def run(self):
             print("DQNAgent run")
             # env.reset()
-            self.drone.run()
+            #self.drone.run()
+
+            self.drone.reset_env()
+            self.drone.iniciar_drone(self.config)
+            self.drone.takeoff()
+            self.drone.last_screen = self.drone.getLidar()
+            self.drone.current_screen = self.drone.getLidar()
+            self.drone.state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen), device=self.drone.device,dtype=torch.float)
+            #self.drone.state = np.subtract(self.drone.current_screen, self.drone.last_screen).clone().detach()
+            for t in count():
+                # Select and perform an action
+                print("Count:",t)
+                self.drone.action = self.drone.select_action(self.drone.state)
+                print("Accion:",self.drone.action)
+                reward = self.drone.compute_reward(self.drone.action)
+                print("Reward:",reward)
+                done = self.drone.isDone(reward)
+                print("Done:",done)
+                # _, reward, done, _ = env.step(action.item())
+                self.drone.reward = torch.tensor([reward], device=self.drone.device)
+
+                # Observe new state
+                self.drone.last_screen = self.drone.current_screen
+                self.drone.current_screen = self.drone.getLidar()
+                if not done:
+                    next_state = self.drone.current_screen - self.drone.last_screen
+                else:
+                    next_state = None
+
+                # Store the transition in memory
+                self.drone.memory.push(self.drone.state, self.drone.action, next_state, self.drone.reward)
+                print("Memory size:", self.drone.memory.__len__())
+                # Move to the next state
+                self.drone.state = next_state
+
+                # Perform one step of the optimization (on the target network)
+                self.drone.optimize_model()
+                if done:
+                    self.drone.episode_durations.append(t + 1)
+                    self.drone.plot_durations()
+                    break
+
+
             # Update the target network, copying all weights and biases in DQN
             # if self.i_episode % self.TARGET_UPDATE == 0:
             #   self.target_net.load_state_dict(self.policy_net.state_dict())

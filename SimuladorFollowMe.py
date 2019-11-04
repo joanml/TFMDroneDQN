@@ -1,6 +1,7 @@
 import time
 import Agentes
-from Agentes.Drone import Drone, Master, Slave
+from Agentes.Master import Master
+from Agentes.Slave import Slave
 from Agentes.AgenteSpadeDrone import PeriodicSenderAgent, ReceiverAgent, Config
 
 if __name__ == "__main__":
