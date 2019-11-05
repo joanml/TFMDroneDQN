@@ -1,17 +1,39 @@
 import datetime
 import time
 
-from Agentes.Drone import Drone, LinearEpsilonAnnealingExplorer, DQN, ReplayMemory, Transition
+from Agentes.Drone import Drone, LinearEpsilonAnnealingExplorer, DQN
 import math
 import random
 import matplotlib.pyplot as plt
 from itertools import count
+from collections import namedtuple
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 
 steps_done = 0
+Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
+
+class ReplayMemory(object):
+
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.memory = []
+        self.position = 0
+
+    def push(self, *args):
+        """Saves a transition."""
+        if len(self.memory) < self.capacity:
+            self.memory.append(None)
+        self.memory[self.position] = Transition(*args)
+        self.position = (self.position + 1) % self.capacity
+
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+
+    def __len__(self):
+        return len(self.memory)
 
 
 class DroneDQN(Drone):
@@ -60,7 +82,7 @@ class DroneDQN(Drone):
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * steps_done / self.EPS_DECAY)
         steps_done += 1
         print('sample',sample,'eps_threshold',eps_threshold,'steps_done',steps_done,'sample > eps_threshold',sample > eps_threshold)
-        if sample > eps_threshold:
+        if steps_done > self.BATCH_SIZE and sample > eps_threshold:
             print("Accion Entrenamiento")
             with torch.no_grad():
                 # t.max(1) will return largest column value of each row.
@@ -70,7 +92,7 @@ class DroneDQN(Drone):
                 return self.policy_net(state).max(1)[1].view(1, 1)
         else:
             print("Accion Aleatoria")
-            return torch.tensor(random.randrange(self.n_actions), device=self.device, dtype=torch.long)
+            return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
 
     def plot_durations(self):
         plt.figure(2)
@@ -108,11 +130,13 @@ class DroneDQN(Drone):
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
+        print('non_final_mask',non_final_mask.size(),'non_final_next_states',non_final_next_states.size(),'state_batch',state_batch.size(),'action_batch',action_batch.size(),'reward_batch',reward_batch.size())
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+        print('state_action_values',state_action_values)
 
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
@@ -165,7 +189,7 @@ class DroneDQN(Drone):
             reward = -100
         else:
             reward = np.int16(np.negative(self.quad_state.y_val) + self.quad_state.x_val).item()
-            return reward
+        return reward
         #     dist = 10000000
         #     # for i in range(0, len(pts) - 1):
         #     #    dist = min(dist, np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1]))) / np.linalg.norm(
@@ -191,8 +215,8 @@ class DroneDQN(Drone):
         self.init_screen = self.getLidar()
         print('init_screen', self.init_screen.size(), self.init_screen.type())
         _, _, screen_height, screen_width = self.init_screen.shape
-        self.policy_net = DQN(self.n_actions).to(self.device)
-        self.target_net = DQN(self.n_actions).to(self.device)
+        self.policy_net = DQN(self.n_actions,self.BATCH_SIZE).to(self.device)
+        self.target_net = DQN(self.n_actions,self.BATCH_SIZE).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
         self.optimizer = optim.RMSprop(self.policy_net.parameters())

@@ -1,6 +1,5 @@
 import airsim
 import random
-from collections import namedtuple
 from PIL import Image
 import torch
 import torch.nn as nn
@@ -12,7 +11,6 @@ from matplotlib.figure import Figure
 import time
 
 
-Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
 resize = T.Compose([T.ToPILImage(),
                     T.Resize(64, interpolation=Image.CUBIC),
                     T.ToTensor()])
@@ -215,37 +213,17 @@ class Replay_Memory(object):
             indexes = np.arange(index - history_length + 1, index + 1)
             return self._states.take(indexes, mode='wrap', axis=0)
 
-class ReplayMemory(object):
-
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.memory = []
-        self.position = 0
-
-    def push(self, *args):
-        """Saves a transition."""
-        if len(self.memory) < self.capacity:
-            self.memory.append(None)
-        self.memory[self.position] = Transition(*args)
-        self.position = (self.position + 1) % self.capacity
-
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
-
-    def __len__(self):
-        return len(self.memory)
-
 class DQN(nn.Sequential):
 
-    def __init__(self, outputs):
+    def __init__(self, outputs,bach = 1,):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=5)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=5)
-        self.bn3 = nn.BatchNorm2d(32)
-        self.head = nn.Linear(28,outputs)
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, padding=2)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 16, kernel_size=5, padding=2)
+        self.bn2 = nn.BatchNorm2d(16)
+        self.conv3 = nn.Conv2d(16, 8, kernel_size=5, padding=2)
+        self.bn3 = nn.BatchNorm2d(8)
+        self.head = nn.Linear(4*bach,outputs)
 
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
@@ -332,7 +310,7 @@ class Drone():
         screen = torch.from_numpy(screen)
         print('screen', screen.size(), screen.type())
         #return resize(screen)
-        # Resize, and add a batch dimension (BCHW)
+        #Resize, and add a batch dimension (BCHW)
         return resize(screen).unsqueeze(0).to('cpu')
     def getCollision(self):
         return self.client.simGetCollisionInfo(vehicle_name=self.nombre)

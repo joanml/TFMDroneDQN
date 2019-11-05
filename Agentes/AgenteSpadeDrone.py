@@ -208,7 +208,7 @@ class DQNAgent(Agent):
                 done = self.drone.isDone(reward)
                 print("Done:",done)
                 # _, reward, done, _ = env.step(action.item())
-                self.drone.reward = torch.tensor([reward], device=self.drone.device)
+                self.drone.reward = torch.tensor([[reward]], device=self.drone.device)
                 print("Reward tensor:", self.drone.reward)
                 # Observe new state
                 self.drone.last_screen = self.drone.current_screen
