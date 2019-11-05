@@ -16,12 +16,18 @@ steps_done = 0
 
 class DroneDQN(Drone):
     def __init__(self, config,
-                 input_shape=(4, 102, 3),
-                 gamma=0.99, eps_start=1, eps_end=0.1, eps_decay=1000000,
-                 explorer=LinearEpsilonAnnealingExplorer(1, 0.1, 1000000),
-                 learning_rate=0.00025, momentum=0.95, minibatch_size=16,
-                 memory_size=500000, train_after=10000, train_interval=4, target_update_interval=10000,
-                 monitor=True, num_actions=4):
+                 gamma=0.99,
+                 eps_start=.9,
+                 eps_end=0.05,
+                 eps_decay=200,
+                 learning_rate=0.00025,
+                 momentum=0.95,
+                 batch_size=16,
+                 memory_size=500000,
+                 train_after=10000,
+                 train_interval=4,
+                 target_update_interval=10000,
+                 num_actions=4):
         self.config = config
         # if gpu is to be used
         self.device = "cpu"#torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -29,13 +35,13 @@ class DroneDQN(Drone):
         self.iniciar_drone(config=self.config)
         print(self.nombre, "Ha iniciado")
 
-        self.BATCH_SIZE = minibatch_size
+        self.BATCH_SIZE = batch_size
         self.GAMMA = gamma
         self.EPS_START = eps_start
         self.EPS_END = eps_end
         self.EPS_DECAY = eps_decay
         self.TARGET_UPDATE = target_update_interval
-        self.input_shape = input_shape
+        #self.input_shape = input_shape
         self.n_actions = num_actions
         self.vervose = self.config.vervose
 
@@ -53,19 +59,18 @@ class DroneDQN(Drone):
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * steps_done / self.EPS_DECAY)
         steps_done += 1
+        print('sample',sample,'eps_threshold',eps_threshold,'steps_done',steps_done,'sample > eps_threshold',sample > eps_threshold)
         if sample > eps_threshold:
             print("Accion Entrenamiento")
             with torch.no_grad():
                 # t.max(1) will return largest column value of each row.
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
+                print('state.size',state.size)
                 return self.policy_net(state).max(1)[1].view(1, 1)
         else:
             print("Accion Aleatoria")
-            return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
-
-
-
+            return torch.tensor(random.randrange(self.n_actions), device=self.device, dtype=torch.long)
 
     def plot_durations(self):
         plt.figure(2)
@@ -86,6 +91,7 @@ class DroneDQN(Drone):
         plt.savefig("./Plots/fig"+name)
 
     def optimize_model(self):
+        print('Optimize_model')
         if len(self.memory) < self.BATCH_SIZE:
             return
         transitions = self.memory.sample(self.BATCH_SIZE)
@@ -94,12 +100,11 @@ class DroneDQN(Drone):
         # to Transition of batch-arrays.
         batch = Transition(*zip(*transitions))
 
+
         # Compute a mask of non-final states and concatenate the batch elements
         # (a final state would've been the one after which simulation ended)
-        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                batch.next_state)), device=self.device, dtype=torch.uint8)
-        non_final_next_states = torch.cat([s for s in batch.next_state
-                                           if s is not None])
+        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,batch.next_state)), device=self.device, dtype=torch.uint8)
+        non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
@@ -184,6 +189,7 @@ class DroneDQN(Drone):
 
     def start(self):
         self.init_screen = self.getLidar()
+        print('init_screen', self.init_screen.size(), self.init_screen.type())
         _, _, screen_height, screen_width = self.init_screen.shape
         self.policy_net = DQN(self.n_actions).to(self.device)
         self.target_net = DQN(self.n_actions).to(self.device)

@@ -209,16 +209,17 @@ class DQNAgent(Agent):
                 print("Done:",done)
                 # _, reward, done, _ = env.step(action.item())
                 self.drone.reward = torch.tensor([reward], device=self.drone.device)
-
+                print("Reward tensor:", self.drone.reward)
                 # Observe new state
                 self.drone.last_screen = self.drone.current_screen
                 self.drone.current_screen = self.drone.getLidar()
                 if not done:
-                    next_state = self.drone.current_screen - self.drone.last_screen
+                    next_state = np.subtract(self.drone.current_screen, self.drone.last_screen)
                 else:
                     next_state = None
 
                 # Store the transition in memory
+                print("Memory push:",self.drone.state.size(), self.drone.action.size(), next_state.size(), self.drone.reward.size())
                 self.drone.memory.push(self.drone.state, self.drone.action, next_state, self.drone.reward)
                 print("Memory size:", self.drone.memory.__len__())
                 # Move to the next state

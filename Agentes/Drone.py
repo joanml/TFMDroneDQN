@@ -14,7 +14,7 @@ import time
 
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
 resize = T.Compose([T.ToPILImage(),
-                    T.Resize(40, interpolation=Image.CUBIC),
+                    T.Resize(64, interpolation=Image.CUBIC),
                     T.ToTensor()])
 
 class LinearEpsilonAnnealingExplorer(object):
@@ -239,13 +239,13 @@ class DQN(nn.Sequential):
 
     def __init__(self, outputs):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
+        self.conv1 = nn.Conv2d(1, 16, kernel_size=5)
         self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=5)
         self.bn2 = nn.BatchNorm2d(32)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
+        self.conv3 = nn.Conv2d(32, 32, kernel_size=5)
         self.bn3 = nn.BatchNorm2d(32)
-        self.head = nn.Linear(32,outputs)
+        self.head = nn.Linear(28,outputs)
 
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
@@ -267,7 +267,6 @@ class Drone():
     def reset_env(self):
         self.client.reset()
         time.sleep(1)
-
     def takeoff(self):
         landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
         print("LandedState: ",airsim.LandedState.Landed)
@@ -324,11 +323,15 @@ class Drone():
         # print(width, height)
         from PIL import Image
         im = Image.frombytes("RGBA", (width, height), s)
+        im = im.convert('L')
         if self.vervose:
             im.show()
             print(width, height)
         screen = np.ascontiguousarray(im, dtype=np.float32) / 255
+        print('screen',screen.size)
         screen = torch.from_numpy(screen)
+        print('screen', screen.size(), screen.type())
+        #return resize(screen)
         # Resize, and add a batch dimension (BCHW)
         return resize(screen).unsqueeze(0).to('cpu')
     def getCollision(self):
