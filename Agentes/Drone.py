@@ -215,7 +215,7 @@ class Replay_Memory(object):
 
 class DQN(nn.Sequential):
 
-    def __init__(self, outputs,bach = 1,):
+    def __init__(self, outputs):
         super(DQN, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, kernel_size=5, padding=2)
         self.bn1 = nn.BatchNorm2d(32)
@@ -223,7 +223,7 @@ class DQN(nn.Sequential):
         self.bn2 = nn.BatchNorm2d(16)
         self.conv3 = nn.Conv2d(16, 8, kernel_size=5, padding=2)
         self.bn3 = nn.BatchNorm2d(8)
-        self.head = nn.Linear(4*bach,outputs)
+        self.head = nn.Linear(64,outputs)
 
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))

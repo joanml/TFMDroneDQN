@@ -44,7 +44,7 @@ class DroneDQN(Drone):
                  eps_decay=200,
                  learning_rate=0.00025,
                  momentum=0.95,
-                 batch_size=16,
+                 batch_size=4,
                  memory_size=500000,
                  train_after=10000,
                  train_interval=4,
@@ -131,7 +131,7 @@ class DroneDQN(Drone):
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
         print('non_final_mask',non_final_mask.size(),'non_final_next_states',non_final_next_states.size(),'state_batch',state_batch.size(),'action_batch',action_batch.size(),'reward_batch',reward_batch.size())
-
+        print('non_final_mask', non_final_mask)
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
@@ -215,8 +215,8 @@ class DroneDQN(Drone):
         self.init_screen = self.getLidar()
         print('init_screen', self.init_screen.size(), self.init_screen.type())
         _, _, screen_height, screen_width = self.init_screen.shape
-        self.policy_net = DQN(self.n_actions,self.BATCH_SIZE).to(self.device)
-        self.target_net = DQN(self.n_actions,self.BATCH_SIZE).to(self.device)
+        self.policy_net = DQN(self.n_actions).to(self.device)
+        self.target_net = DQN(self.n_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
