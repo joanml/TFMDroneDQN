@@ -89,7 +89,8 @@ class DroneDQN(Drone):
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
                 print('state.size',state.size)
-                return self.policy_net(state).max(1)[1].view(1, 1)
+                state1 = state.clone().detach().requires_grad_(True)
+                return self.policy_net(state1).max(1)[1].view(1, 1)
         else:
             print("Accion Aleatoria")
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
@@ -135,9 +136,11 @@ class DroneDQN(Drone):
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
-        print('state_action_values',state_action_values)
-
+        # print(state_batch)
+        # print(action_batch)
+        state_action_values = self.policy_net(state_batch) #.gather(1, action_batch)
+        # print('state_action_values',state_action_values)
+        print('non_final_mask', non_final_mask.shape)
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
         # on the "older" target_net; selecting their best reward with max(1)[0].
@@ -145,9 +148,10 @@ class DroneDQN(Drone):
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
         next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+        print('next_state_values',next_state_values)
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
-
+        print('expected_state_action_values',expected_state_action_values)
         # Compute Huber loss
         loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
 

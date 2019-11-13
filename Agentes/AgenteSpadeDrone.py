@@ -196,9 +196,16 @@ class DQNAgent(Agent):
             self.drone.takeoff()
             self.drone.last_screen = self.drone.getLidar()
             self.drone.current_screen = self.drone.getLidar()
-            self.drone.state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen), device=self.drone.device,dtype=torch.float)
+            #self.drone.state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen), device=self.drone.device,dtype=torch.float)
+
+            self.drone.state = torch.tensor(self.drone.current_screen - self.drone.last_screen, device=self.drone.device,dtype=torch.float)
+
+
+
+
             #self.drone.state = np.subtract(self.drone.current_screen, self.drone.last_screen).clone().detach()
             for t in count():
+                print("-"*20 + str((self.drone.state.shape)))
                 # Select and perform an action
                 print("Count:",t)
                 self.drone.action = self.drone.select_action(self.drone.state)
@@ -213,8 +220,10 @@ class DQNAgent(Agent):
                 # Observe new state
                 self.drone.last_screen = self.drone.current_screen
                 self.drone.current_screen = self.drone.getLidar()
+
+                print(self.drone.current_screen - self.drone.last_screen)
                 if not done:
-                    next_state = np.subtract(self.drone.current_screen, self.drone.last_screen)
+                    next_state = self.drone.current_screen - self.drone.last_screen #np.subtract(self.drone.current_screen, self.drone.last_screen)
                 else:
                     next_state = None
 
@@ -225,6 +234,7 @@ class DQNAgent(Agent):
                 # Move to the next state
                 self.drone.state = next_state
 
+                print("*"*30 + str(done) )
                 # Perform one step of the optimization (on the target network)
                 self.drone.optimize_model()
                 if done:
