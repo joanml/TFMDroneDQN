@@ -1,5 +1,7 @@
 import airsim
 import random
+
+import cv2
 from PIL import Image
 import torch
 import torch.nn as nn
@@ -10,10 +12,10 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 import time
 
-
 resize = T.Compose([T.ToPILImage(),
                     T.Resize(64, interpolation=Image.CUBIC),
                     T.ToTensor()])
+
 
 class LinearEpsilonAnnealingExplorer(object):
     """
@@ -64,6 +66,8 @@ class LinearEpsilonAnnealingExplorer(object):
              bool : True if exploring, False otherwise
         """
         return np.random.rand() < self._epsilon(step)
+
+
 class History(object):
     """
     Accumulator keeping track of the N previous frames to be used by the agent
@@ -96,6 +100,8 @@ class History(object):
 
         """
         self._buffer.fill(0)
+
+
 class Replay_Memory(object):
     """
     ReplayMemory keeps track of the environment dynamic.
@@ -103,6 +109,7 @@ class Replay_Memory(object):
     The replay memory allows us to efficiently sample mini-batches from it, and generate the correct state representation
     (w.r.t the number of previous frames needed).
     """
+
     def __init__(self, size, sample_shape, history_length=4):
         self._pos = 0
         self._count = 0
@@ -213,26 +220,44 @@ class Replay_Memory(object):
             indexes = np.arange(index - history_length + 1, index + 1)
             return self._states.take(indexes, mode='wrap', axis=0)
 
-class DQN(nn.Sequential):
-    def __init__(self, outputs):
+
+class DQN(nn.Module):
+
+    def __init__(self, h, w, outputs):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, padding=2)
-        self.bn1 = nn.BatchNorm2d(32)
-        self.conv2 = nn.Conv2d(32, 16, kernel_size=5, padding=2)
-        self.bn2 = nn.BatchNorm2d(16)
-        self.conv3 = nn.Conv2d(16, 8, kernel_size=5, padding=2)
-        self.bn3 = nn.BatchNorm2d(8)
-        self.head = nn.Linear(64,outputs)
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
+        self.bn1 = nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
+        self.bn3 = nn.BatchNorm2d(32)
+
+        # Number of Linear input connections depends on output of conv2d layers
+        # and therefore the input image size, so compute it.
+        def conv2d_size_out(size, kernel_size=5, stride=2):
+            return (size - (kernel_size - 1) - 1) // stride + 1
+
+        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
+        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
+        linear_input_size = convw * convh * 32
+        self.head = nn.Linear(linear_input_size, outputs)
+
+    # Called with either one element to determine next action, or a batch
+    # during optimization. Returns tensor([[left0exp,right0exp]...]).
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
-        return F.relu(self.head(x))
+        return self.head(x.view(x.size(0), -1))
+
+# -----------------------------------------------------------------------------------------------------------------------
+
+
 
 class Drone():
 
     # Funcionan
-    def iniciar_drone(self, config ):
+    def iniciar_drone(self, config):
         airsim.YawMode.is_rate = False
         self.config = config
         self.client = airsim.MultirotorClient()
@@ -240,12 +265,14 @@ class Drone():
         self.setInfo(name=self.config.name, L1=self.config.lidar1, L2=self.config.lidar2, GPS=self.config.gps)
         self.vervose = self.config.vervose
         print(self.nombre, " Conectado")
+
     def reset_env(self):
         self.client.reset()
         time.sleep(1)
+
     def takeoff(self):
         landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
-        print("LandedState: ",airsim.LandedState.Landed)
+        print("LandedState: ", airsim.LandedState.Landed)
         if landed == airsim.LandedState.Landed:
             print(self.nombre, " taking off...")
             self.client.takeoffAsync(vehicle_name=self.nombre).join()
@@ -253,6 +280,7 @@ class Drone():
         else:
             print(self.nombre, " already flying...")
             self.client.hoverAsync(vehicle_name=self.nombre).join()
+
     def landing(self):
         landed = self.client.getMultirotorState(vehicle_name=self.nombre).landed_state
         if landed == airsim.LandedState.Flying:
@@ -260,25 +288,39 @@ class Drone():
             self.client.landAsync(vehicle_name=self.nombre).join()
         else:
             print(self.nombre, " already landing...")
+
     def parse_lidarData(self, data):
         # reshape array of floats to array of [X,Y,Z]
         points = np.array(data.point_cloud, dtype=np.dtype('f4'))
-        print('reshape',int(points.shape[0] / 3))
+        print('reshape', int(points.shape[0] / 3))
         if int(points.shape[0] / 3) == 0:
             print(points)
         points = np.reshape(points, (int(points.shape[0] / 3), 3))
 
         return points
+
+    def create_blank(self, width, height, rgb_color=(0, 0, 0)):
+        """Create new image(numpy array) filled with certain color in RGB"""
+        # Create black blank image
+        image = np.zeros((height, width, 3), np.uint8)
+
+        # Since OpenCV uses BGR, convert the color first
+        color = tuple(reversed(rgb_color))
+        # Fill image with color
+        image[:] = color
+
+        return image
+
     def getLidar(self):
         info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
-        #print(len(info.point_cloud),info.point_cloud)
+        # print(len(info.point_cloud),info.point_cloud)
         while len(info.point_cloud) < 4:
             time.sleep(0.5)
             info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
-            #print(len(info.point_cloud))
-        #print('Lidar, info OK')
+            # print(len(info.point_cloud))
+        # print('Lidar, info OK')
         points = self.parse_lidarData(info)
-        #print('Lidar, point OK')
+        # print('Lidar, point OK')
         x = list()
         y = list()
         for m in points:
@@ -287,8 +329,8 @@ class Drone():
             y.append(m[0])
         x = np.asarray(x)
         y = np.asarray(y)
-        #print('Lidar, 2XY OK')
-        fig = Figure( figsize=(5, 5), dpi=100)
+        # print('Lidar, 2XY OK')
+        fig = Figure(figsize=(5, 5), dpi=100)
         canvas = FigureCanvasAgg(fig)
         ax = fig.add_subplot(111)
         ax.scatter(x, y)
@@ -299,36 +341,59 @@ class Drone():
         # print(width, height)
         from PIL import Image
         im = Image.frombytes("RGBA", (width, height), s)
-        im = im.convert('L')
+        # im = im.convert('L')
+        # jarain78
+        open_cv_image = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
+        image = self.create_blank(width, height)
+        image = cv2.add(image, open_cv_image)
+
         if self.vervose:
             im.show()
             print(width, height)
+            print(image.shape)
+            cv2.imshow("Blank Image", image)
+            cv2.imwrite('red.jpg', image)
+            cv2.waitKey(0)
+
+        im = image
+
         screen = np.ascontiguousarray(im, dtype=np.float32) / 255
-        print('screen',screen.size)
+        print('screen', screen.size)
         screen = torch.from_numpy(screen)
+
+        screen = np.swapaxes(screen, 0, 2)
         print('screen', screen.size(), screen.type())
-        #return resize(screen)
-        #Resize, and add a batch dimension (BCHW)
+
+        # return resize(screen)
+        # Resize, and add a batch dimension (BCHW)
         return resize(screen).unsqueeze(0).to('cpu')
+
     def getCollision(self):
         return self.client.simGetCollisionInfo(vehicle_name=self.nombre)
+
     def getQuadState(self):
         return self.client.getMultirotorState(vehicle_name=self.nombre).kinematics_estimated.position
+
     def getQuadVel(self):
         return self.client.getMultirotorState(vehicle_name=self.nombre).kinematics_estimated.linear_velocity
+
     def moveDerecha(self, y, vel):
         posicion = self.getPosition()
         self.moveTo(int(posicion.x_val), int(posicion.y_val) + y, int(posicion.z_val), vel)
+
     def moveIzquierda(self, y, vel):
         posicion = self.getPosition()
         self.moveTo(int(posicion.x_val), int(posicion.y_val) - y, int(posicion.z_val), vel)
-        #print("IZQUIERDA", posicion)
-    def moveDelante(self,x,vel):
+        # print("IZQUIERDA", posicion)
+
+    def moveDelante(self, x, vel):
         posicion = self.getPosition()
         self.moveTo(int(posicion.x_val) + x, int(posicion.y_val), int(posicion.z_val), vel)
-    def moveAtras(self,x,vel):
+
+    def moveAtras(self, x, vel):
         posicion = self.getPosition()
         self.moveTo(int(posicion.x_val) - x, int(posicion.y_val), int(posicion.z_val), vel)
+
     def setInfo(self, name, L1, L2, GPS):
         self.nombre = name
         self.nombreLidar1 = L1
@@ -336,28 +401,31 @@ class Drone():
         self.nombreGPS = GPS
         self.client.enableApiControl(True, vehicle_name=self.nombre)
         self.client.armDisarm(True, vehicle_name=self.nombre)
-    def moveArriba(self,z, vel):
+
+    def moveArriba(self, z, vel):
         posicion = self.getPosition()
         if posicion.z_val - z > -50:
             self.moveTo(int(posicion.x_val), int(posicion.y_val), int(posicion.z_val) - z, vel)
         else:
             self.moveTo(int(posicion.x_val), int(posicion.y_val), -50, vel)
-    def moveAbajo(self,z,vel):
+
+    def moveAbajo(self, z, vel):
         posicion = self.getPosition()
         if posicion.z_val + z < 0:
             self.moveTo(int(posicion.x_val), int(posicion.y_val), int(posicion.z_val) + z, vel)
         else:
             self.moveTo(int(posicion.x_val), int(posicion.y_val), -1, vel)
+
     def getPosition(self):
         return self.client.simGetGroundTruthKinematics(vehicle_name=self.nombre).position
+
     def moveTo(self, horizontal, lateral, altura, v):
         return self.client.moveToPositionAsync(horizontal, lateral, altura, v, vehicle_name=self.nombre).join()
 
-    def takeoffPositionStart(self,vel):
+    def takeoffPositionStart(self, vel):
         self.takeoff()
         self.moveArriba(5, vel)
         print("DQNAgent takeoff")
-
 
     # No usadas
     '''
@@ -495,5 +563,3 @@ class Drone():
         print('im, getLidar1Img OK')
         return im
     '''
-
-

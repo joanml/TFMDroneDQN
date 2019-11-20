@@ -29,9 +29,9 @@ class Config():
                  lidar2='',
                  gps='',
                  jidSlave="",
-                 vel=2,
-                 mov=2,
-                 vervose= False,
+                 vel=1,
+                 mov=1,
+                 vervose=False,
                  num_episodes=0):
         self.jid = jid
         self.password = password
@@ -179,7 +179,7 @@ class DQNAgent(Agent):
             print("DQNAgent on_start", self.config.name)
             self.drone = DroneDQN(config=self.config)
 
-            #self.drone.reset_env()
+            # self.drone.reset_env()
 
             self.drone.start()
 
@@ -189,31 +189,29 @@ class DQNAgent(Agent):
         async def run(self):
             print("DQNAgent run")
             # env.reset()
-            #self.drone.run()
+            # self.drone.run()
 
             self.drone.reset_env()
             self.drone.iniciar_drone(self.config)
             self.drone.takeoff()
             self.drone.last_screen = self.drone.getLidar()
             self.drone.current_screen = self.drone.getLidar()
-            #self.drone.state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen), device=self.drone.device,dtype=torch.float)
 
-            self.drone.state = torch.tensor(self.drone.current_screen - self.drone.last_screen, device=self.drone.device,dtype=torch.float)
+            # self.drone.state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen),
+            #                                device=self.drone.device, dtype=torch.float)
+            self.drone.state = self.drone.current_screen - self.drone.last_screen
 
-
-
-
-            #self.drone.state = np.subtract(self.drone.current_screen, self.drone.last_screen).clone().detach()
+            # self.drone.state = np.subtract(self.drone.current_screen, self.drone.last_screen).clone().detach()
             for t in count():
-                print("-"*20 + str((self.drone.state.shape)))
+                print("-" * 20 + str((self.drone.state.shape)))
                 # Select and perform an action
-                print("Count:",t)
+                print("Count:", t)
                 self.drone.action = self.drone.select_action(self.drone.state)
-                print("Accion:",self.drone.action)
+                print("Accion:", self.drone.action)
                 reward = self.drone.compute_reward(self.drone.action)
-                print("Reward:",reward)
+                print("Reward:", reward)
                 done = self.drone.isDone(reward)
-                print("Done:",done)
+                print("Done:", done)
                 # _, reward, done, _ = env.step(action.item())
                 self.drone.reward = torch.tensor([[reward]], device=self.drone.device)
                 print("Reward tensor:", self.drone.reward)
@@ -221,44 +219,30 @@ class DQNAgent(Agent):
                 self.drone.last_screen = self.drone.current_screen
                 self.drone.current_screen = self.drone.getLidar()
 
-                print(self.drone.current_screen - self.drone.last_screen)
                 if not done:
-                    next_state = self.drone.current_screen - self.drone.last_screen #np.subtract(self.drone.current_screen, self.drone.last_screen)
-                else:
-                    next_state = None
+                    next_state = self.drone.current_screen - self.drone.last_screen
+                    # next_state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen),
+                    #                          device=self.drone.device, dtype=torch.float)
 
-                # Store the transition in memory
-                print("Memory push:",self.drone.state.size(), self.drone.action.size(), next_state.size(), self.drone.reward.size())
-                self.drone.memory.push(self.drone.state, self.drone.action, next_state, self.drone.reward)
-                print("Memory size:", self.drone.memory.__len__())
-                # Move to the next state
-                self.drone.state = next_state
 
-                print("*"*30 + str(done) )
-                # Perform one step of the optimization (on the target network)
-                self.drone.optimize_model()
+                    # Store the transition in memory
+                    self.drone.memory.push(self.drone.state, self.drone.action, next_state, self.drone.reward)
+                    print("Memory size:", self.drone.memory.__len__())
+                    # Move to the next state
+                    self.drone.state = next_state
+
+                    # Perform one step of the optimization (on the target network)
+                    self.drone.optimize_model()
+
                 if done:
                     self.drone.episode_durations.append(t + 1)
                     self.drone.plot_durations()
                     break
 
-
-            # Update the target network, copying all weights and biases in DQN
-            # if self.i_episode % self.TARGET_UPDATE == 0:
-            #   self.target_net.load_state_dict(self.policy_net.state_dict())
-
-            # last_screen = get_screen()
-            # current_screen = get_screen()
-            # state = current_screen - last_screen
-
-            # img = self.drone.getLidar()
-            #
-            # self.drone.moveDelante(self.config.mov,self.config.vel)
             self.num_episodes -= 1
             if self.num_episodes <= 0:
                 print('Complete')
                 self.kill(exit_code=10)
-
 
         async def on_end(self):
             print("DQNAgent stop")

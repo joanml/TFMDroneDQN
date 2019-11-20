@@ -15,6 +15,7 @@ import numpy as np
 steps_done = 0
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
 
+
 class ReplayMemory(object):
 
     def __init__(self, capacity):
@@ -41,18 +42,19 @@ class DroneDQN(Drone):
                  gamma=0.99,
                  eps_start=.9,
                  eps_end=0.05,
-                 eps_decay=200,
+                 eps_decay=1,
                  learning_rate=0.00025,
                  momentum=0.95,
-                 batch_size=4,
+                 batch_size=1,
                  memory_size=500000,
                  train_after=10000,
                  train_interval=4,
-                 target_update_interval=10000,
+                 target_update_interval=10,
                  num_actions=4):
+
         self.config = config
         # if gpu is to be used
-        self.device = "cpu"#torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.iniciar_drone(config=self.config)
         print(self.nombre, "Ha iniciado")
@@ -63,7 +65,7 @@ class DroneDQN(Drone):
         self.EPS_END = eps_end
         self.EPS_DECAY = eps_decay
         self.TARGET_UPDATE = target_update_interval
-        #self.input_shape = input_shape
+        # self.input_shape = input_shape
         self.n_actions = num_actions
         self.vervose = self.config.vervose
 
@@ -71,7 +73,7 @@ class DroneDQN(Drone):
         self._train_interval = train_interval
         self._target_update_interval = target_update_interval
 
-        #self._explorer = explorer
+        # self._explorer = explorer
 
         # Metrics accumulator
         self._episode_rewards, self._episode_q_means, self._episode_q_stddev = [], [], []
@@ -81,16 +83,21 @@ class DroneDQN(Drone):
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * steps_done / self.EPS_DECAY)
         steps_done += 1
-        print('sample',sample,'eps_threshold',eps_threshold,'steps_done',steps_done,'sample > eps_threshold',sample > eps_threshold)
+        print('sample', sample, 'eps_threshold', eps_threshold, 'steps_done', steps_done, 'sample > eps_threshold',
+              sample > eps_threshold)
+
         if steps_done > self.BATCH_SIZE and sample > eps_threshold:
             print("Accion Entrenamiento")
             with torch.no_grad():
                 # t.max(1) will return largest column value of each row.
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
-                print('state.size',state.size)
+                print("Policy Net: ", self.policy_net(state))
+                print("Select Action: ", self.policy_net(state).max(1)[1])
+                print("Select Action: ", self.policy_net(state).max(1)[1].view(1, 1))
+
                 state1 = state.clone().detach().requires_grad_(True)
-                return self.policy_net(state1).max(1)[1].view(1, 1)
+                return self.policy_net(state1).max(1)[1]  # .view(1, 1)
         else:
             print("Accion Aleatoria")
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
@@ -110,8 +117,9 @@ class DroneDQN(Drone):
             plt.plot(means.numpy())
 
         plt.pause(0.001)  # pause a bit so that plots are updated
-        name=datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S:%f")
-        plt.savefig("./Plots/fig"+name)
+        name = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S:%f")
+        # plt.savefig("fig" + str(name))
+        plt.savefig("test_rasterization.jpg", dpi=150)
 
     def optimize_model(self):
         print('Optimize_model')
@@ -123,35 +131,42 @@ class DroneDQN(Drone):
         # to Transition of batch-arrays.
         batch = Transition(*zip(*transitions))
 
-
         # Compute a mask of non-final states and concatenate the batch elements
         # (a final state would've been the one after which simulation ended)
-        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,batch.next_state)), device=self.device, dtype=torch.uint8)
-        non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
+        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                                batch.next_state)), device=self.device, dtype=torch.uint8)
+
+        non_final_next_states = torch.cat([s for s in batch.next_state
+                                           if s is not None])
+        max_action = max(batch.action)
+        print("batch.action: ", max_action)
+
         state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
+        action_batch = max_action #torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
-        print('non_final_mask',non_final_mask.size(),'non_final_next_states',non_final_next_states.size(),'state_batch',state_batch.size(),'action_batch',action_batch.size(),'reward_batch',reward_batch.size())
-        print('non_final_mask', non_final_mask)
+
+        #print("state_batch: ", state_batch)
+        print("action_batch: ", action_batch)
+        print("reward_batch: ", reward_batch)
+
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        # print(state_batch)
-        # print(action_batch)
-        state_action_values = self.policy_net(state_batch) #.gather(1, action_batch)
-        # print('state_action_values',state_action_values)
-        print('non_final_mask', non_final_mask.shape)
+        state_action_values = self.policy_net(state_batch)#.gather(1, action_batch)
+
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
         # on the "older" target_net; selecting their best reward with max(1)[0].
         # This is merged based on the mask, such that we'll have either the expected
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
+
+        #next_state_values[non_final_mask] = torch.tensor(self.target_net(non_final_next_states).max(1)[0].detach())
+
         next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
-        print('next_state_values',next_state_values)
+
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
-        print('expected_state_action_values',expected_state_action_values)
         # Compute Huber loss
         loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
 
@@ -163,6 +178,7 @@ class DroneDQN(Drone):
         self.optimizer.step()
 
     def interpret_action(self, action):
+        print("*" * 20, action)
         if action == 0:
             self.moveDerecha(self.config.mov, self.config.vel)
         elif action == 1:
@@ -170,7 +186,8 @@ class DroneDQN(Drone):
         elif action == 2:
             self.moveDelante(self.config.mov, self.config.vel)
         elif action == 3:
-            self.moveAtras(self.config.mov, self.config.vel)
+            pass
+            #self.moveAtras(self.config.mov, self.config.vel)
 
     def compute_reward(self, action):
 
@@ -190,10 +207,11 @@ class DroneDQN(Drone):
         # quad_pt = np.array(list((self.quad_state.x_val, self.quad_state.y_val, self.quad_state.z_val)))
 
         if self.collision_info.has_collided:
-            reward = -100
+            reward = -1000
         else:
             reward = np.int16(np.negative(self.quad_state.y_val) + self.quad_state.x_val).item()
         return reward
+
         #     dist = 10000000
         #     # for i in range(0, len(pts) - 1):
         #     #    dist = min(dist, np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1]))) / np.linalg.norm(
@@ -209,9 +227,9 @@ class DroneDQN(Drone):
         #
         # return reward
 
-    def isDone(self,reward):
+    def isDone(self, reward):
         done = False
-        if reward <= -10:
+        if reward <= -1000:
             done = True
         return done
 
@@ -219,10 +237,17 @@ class DroneDQN(Drone):
         self.init_screen = self.getLidar()
         print('init_screen', self.init_screen.size(), self.init_screen.type())
         _, _, screen_height, screen_width = self.init_screen.shape
-        self.policy_net = DQN(self.n_actions).to(self.device)
-        self.target_net = DQN(self.n_actions).to(self.device)
+
+        self.policy_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
+        self.target_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
+
+        # self.policy_net = My_DQN(500, 500, self.n_actions).to(self.device)
+        # self.target_net = My_DQN(500, 500, self.n_actions).to(self.device)
+
         self.target_net.load_state_dict(self.policy_net.state_dict())
+
         self.target_net.eval()
+
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
         self.memory = ReplayMemory(10000)
         self.steps_done = 0
