@@ -8,8 +8,8 @@ if __name__ == "__main__":
     jidMaster = "senderMasterAgent15@gtirouter.dsic.upv.es"
     jidSlave = "reciberSlaveAgent15@gtirouter.dsic.upv.es"
 
-    MasterConfig = Config(jidMaster,"123","Drone_1","MyLidar1_1","MyLidar1_2","GPS_1",jidSlave)
-    SlaveConfig = Config(jidMaster,"123","Drone_2","MyLidar2_1","MyLidar2_2","GPS_2",jidMaster)
+    MasterConfig = Config(jidMaster,"123","Drone_1","MyLidar1_1","MyLidar1_2","GPS_1",jidSlave,vel=5)
+    SlaveConfig = Config(jidMaster,"123","Drone_2","MyLidar2_1","MyLidar2_2","GPS_2",jidMaster,vel=5)
 
     master = PeriodicSenderAgent(MasterConfig)
     slave = ReceiverAgent(SlaveConfig)
@@ -23,6 +23,7 @@ if __name__ == "__main__":
             slave.stop()
             master.stop()
             break
+
     print("Agents finished")
 
 

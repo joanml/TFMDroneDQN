@@ -133,10 +133,7 @@ class ReceiverAgent(Agent):
             self.config = config
 
         async def on_start(self):
-            self.drone = Slave(n=self.config.name,
-                               L1=self.config.lidar1,
-                               L2=self.config.lidar2,
-                               GPS=self.config.gps)
+            self.drone = Slave(config=self.config)
             self.drone.takeoff()
             initial_possition = self.drone.getPosition()
             print("Initial Possition: " + str(initial_possition) + " GPS: ")  # + str(self.drone.getGps()))

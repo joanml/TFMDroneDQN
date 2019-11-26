@@ -209,7 +209,15 @@ class DroneDQN(Drone):
         if self.collision_info.has_collided:
             reward = -1000
         else:
-            reward = np.int16(np.negative(self.quad_state.y_val) + self.quad_state.x_val).item()
+            #reward = np.int16(np.negative(self.quad_state.y_val) + self.quad_state.x_val).item()
+            x_objetivo = 0
+            y_objetivo = 0
+            maxreword = 1000
+            distance = np.sqrt(np.power(self.quad_state.y_val - y_objetivo)**2 + (self.quad_state.x_val - x_objetivo)**2)
+            if distance > maxreword:
+                reward = 0
+            else:
+                reward = maxreword - distance
         return reward
 
         #     dist = 10000000
