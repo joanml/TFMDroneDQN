@@ -1,7 +1,7 @@
 import airsim
 import random
-
-#import cv2
+import math
+import cv2
 from PIL import Image
 import torch
 import torch.nn as nn
@@ -11,6 +11,9 @@ import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 import time
+from ImageProcessing.ImageProcessing import ImageProcessing
+from ConfigFiles import ConfigAirSimCamera
+from datetime import datetime
 
 resize = T.Compose([T.ToPILImage(),
                     T.Resize(64, interpolation=Image.CUBIC),
@@ -221,20 +224,20 @@ class Replay_Memory(object):
             return self._states.take(indexes, mode='wrap', axis=0)
 
 
-class DQN_net(nn.Module):
+class DQN(nn.Module):
 
     def __init__(self, h, w, outputs):
-        super(DQN_net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
+        super(DQN, self).__init__()
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=7, stride=2)
         self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=7, stride=2)
         self.bn2 = nn.BatchNorm2d(32)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
+        self.conv3 = nn.Conv2d(32, 32, kernel_size=7, stride=2)
         self.bn3 = nn.BatchNorm2d(32)
 
         # Number of Linear input connections depends on output of conv2d layers
         # and therefore the input image size, so compute it.
-        def conv2d_size_out(size, kernel_size=5, stride=2):
+        def conv2d_size_out(size, kernel_size=7, stride=2):
             return (size - (kernel_size - 1) - 1) // stride + 1
 
         convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
@@ -250,8 +253,8 @@ class DQN_net(nn.Module):
         x = F.relu(self.bn3(self.conv3(x)))
         return self.head(x.view(x.size(0), -1))
 
-# -----------------------------------------------------------------------------------------------------------------------
 
+# -----------------------------------------------------------------------------------------------------------------------
 
 
 class Drone():
@@ -264,7 +267,15 @@ class Drone():
         self.client.confirmConnection()
         self.setInfo(name=self.config.name, L1=self.config.lidar1, L2=self.config.lidar2, GPS=self.config.gps)
         self.vervose = self.config.vervose
+        self.image_processing = ImageProcessing()
+        self.conta_img = 0
+        self.conta_img_1 = 0
+        self.position_list = []
         print(self.nombre, " Conectado")
+
+        dateTimeObj = datetime.now()
+        self.file1 = open("Logs/Txt/" + str(dateTimeObj).replace(
+            ':', '_') + ".txt", "w")
 
     def reset_env(self):
         self.client.reset()
@@ -314,10 +325,12 @@ class Drone():
     def getLidar(self):
         info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
         # print(len(info.point_cloud),info.point_cloud)
+
         while len(info.point_cloud) < 4:
             time.sleep(0.5)
             info = self.client.getLidarData(lidar_name=self.nombreLidar1, vehicle_name=self.nombre)
             # print(len(info.point_cloud))
+
         # print('Lidar, info OK')
         points = self.parse_lidarData(info)
         # print('Lidar, point OK')
@@ -329,35 +342,102 @@ class Drone():
             y.append(m[0])
         x = np.asarray(x)
         y = np.asarray(y)
+
         # print('Lidar, 2XY OK')
+
         fig = Figure(figsize=(5, 5), dpi=100)
         canvas = FigureCanvasAgg(fig)
         ax = fig.add_subplot(111)
         ax.scatter(x, y)
-        ax.plot(x, y, '-o')
+        ax.plot(x, y)  # , '-o')
         ax.axis('off')
         canvas.draw()
+
         s, (width, height) = canvas.print_to_buffer()
         # print(width, height)
         from PIL import Image
         im = Image.frombytes("RGBA", (width, height), s)
-        # im = im.convert('L')
+
         # jarain78
-        #open_cv_image = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
-        #image = self.create_blank(width, height)
-        #image = cv2.add(image, open_cv_image)
+        open_cv_image = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
+        image = self.create_blank(width, height)
+        image = cv2.add(image, open_cv_image)
+        imag90, image180, image270 = self.image_processing.rotateImage(image)
+        dateTimeObj = datetime.now()
+        print(dateTimeObj)
+        cv2.imwrite('Logs/LidarImages/lidar_imag_' + str(dateTimeObj).replace(
+            ':', '_') + '.jpg', imag90)
 
-        if self.vervose:
-            im.show()
-            print(width, height)
-            #print(image.shape)
-            #cv2.imshow("Blank Image", image)
-            #cv2.imwrite('red.jpg', image)
-            #cv2.waitKey(0)
+        if self.conta_img_1 == 100:
+            self.conta_img_1 = 0
 
-        #im = image
+        self.conta_img_1 = self.conta_img_1 + 1
+
+        im = imag90
 
         screen = np.ascontiguousarray(im, dtype=np.float32) / 255
+        print('screen', screen.size)
+        screen = torch.from_numpy(screen)
+
+        screen = np.swapaxes(screen, 0, 2)
+        print('screen', screen.size(), screen.type())
+
+        # return resize(screen)
+        # Resize, and add a batch dimension (BCHW)
+        return resize(screen).unsqueeze(0).to('cpu')
+
+    # Jarain78
+
+    def storedg_drone_vectors(self):
+        currente_possition = str(self.getPosition())
+        currente_vel = str(self.getQuadVel())
+        dateTimeObj = datetime.now()
+
+        self.file1.writelines(str(dateTimeObj).replace(
+            ':', '_') + " " + currente_possition + " " + currente_vel)
+
+    def close_file(self):
+        self.file1.close()
+
+    '''def getPositionImage(self):
+        position = self.getPosition()
+        self.position_list.append([int(position.x_val), int(position.y_val) + y, int(position.z_val)])
+
+        if len(self.position_list)==10:
+            fig = Figure(figsize=(5, 5), dpi=100)
+            canvas = FigureCanvasAgg(fig)
+            ax = fig.add_subplot(111)
+            for i in self.position_list:
+                ax.scatter(i)
+            ax.axis('off')
+            canvas.draw()
+        self.position_list = 0'''
+
+    def getCamera(self, save_img=False):
+        # because this method returns std::vector<uint8>, msgpack decides to encode it as a string unfortunately.
+        rawImage = self.client.simGetImage("2", ConfigAirSimCamera.cameraTypeMap[
+            ConfigAirSimCamera.cameraType])
+
+        air_sim_str2arr = airsim.string_to_uint8_array(rawImage)
+
+        image = self.image_processing.get_preview_image(rawImage, air_sim_str2arr)
+
+        image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+        canny_image = self.image_processing.canny(image)
+        img_1 = self.image_processing.region_of_interest(image)
+
+        # if save_img or self.conta_img > 10:
+        dateTimeObj = datetime.now()
+        cv2.imwrite("Logs/Images/" + str(dateTimeObj).replace(
+            ':', '_') + "_camera.png", image)
+
+        if self.conta_img == 10:
+            self.conta_img = 0
+
+        self.conta_img = self.conta_img + 1
+
+        screen = np.ascontiguousarray(image, dtype=np.float32) / 255
         print('screen', screen.size)
         screen = torch.from_numpy(screen)
 
@@ -422,10 +502,71 @@ class Drone():
     def moveTo(self, horizontal, lateral, altura, v):
         return self.client.moveToPositionAsync(horizontal, lateral, altura, v, vehicle_name=self.nombre).join()
 
+    # Jarain78
+
+    def show_path(self):
+        pass
+        #self.simShowPawnPath(True, 3, 8, "Drone_1")
+
+
+
+    def moveToPositionNoSync(self, x, y, z, velocity):
+        '''result = self.client.moveOnPathAsync(
+            [airsim.Vector3r(0, -10, z), airsim.Vector3r(0, -10, z), airsim.Vector3r(0, 0, z),
+             airsim.Vector3r(0, 0, z), airsim.Vector3r(0, 0, -20)],
+            12, 120,
+            airsim.DrivetrainType.ForwardOnly, airsim.YawMode(False, 0), 20, 1).join()
+        print(result)'''
+        self.client.moveToPositionAsync(x, y, z, 1).join()
+
+    def moveToXYZ(self, goal_pos_x=10, goal_pos_y=10, goal_pos_z=10):
+        global x
+        global y
+        global theta
+
+        posicion = self.getPosition()
+
+        x = posicion.x_val
+        y = posicion.y_val
+        z = posicion.z_val
+
+        inc_x = goal_pos_x - x
+        inc_y = goal_pos_y - y
+
+        angle_to_goal = math.atan2(goal_pos_y - inc_y, goal_pos_x - inc_x)
+
+        if abs(angle_to_goal) > 0.1:
+            linear_speed_x = 0.0
+            linear_speed_y = 0.3
+            linear_speed_z = 0.0
+        else:
+            linear_speed_x = 0.5
+            linear_speed_y = 0.0
+            linear_speed_z = 0.0
+
+        self.moveTo(inc_x, inc_y, int(posicion.z_val), 0.5)
+
+        return linear_speed_x, linear_speed_y, linear_speed_z, inc_x, inc_y
+
     def takeoffPositionStart(self, vel):
         self.takeoff()
-        self.moveArriba(5, vel)
+        self.moveArriba(2, vel)
         print("DQNAgent takeoff")
+
+    def moveDroneOnPath(self):
+        # AirSim uses NED coordinates so negative axis is up.
+        # z of -7 is 7 meters above the original launch point.
+        z = -7
+
+        # see https://github.com/Microsoft/AirSim/wiki/moveOnPath-demo
+
+        # this method is async and we are not waiting for the result since we are passing timeout_sec=0.
+        result = self.client.moveOnPathAsync(
+            [airsim.Vector3r(0, -253, z), airsim.Vector3r(125, -253, z), airsim.Vector3r(125, 0, z),
+             airsim.Vector3r(0, 0, z), airsim.Vector3r(0, 0, -20)],
+            12, 120,
+            airsim.DrivetrainType.ForwardOnly, airsim.YawMode(False, 0), 20, 1).join()
+        self.client.moveToPositionAsync(0, 0, z, 1).join()
 
     # No usadas
     '''

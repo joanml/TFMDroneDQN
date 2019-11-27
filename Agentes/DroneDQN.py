@@ -1,8 +1,7 @@
 import datetime
-import os
 import time
 
-from Agentes.Drone import Drone, LinearEpsilonAnnealingExplorer, DQN_net
+from Agentes.Drone import Drone, LinearEpsilonAnnealingExplorer, DQN
 import math
 import random
 import matplotlib.pyplot as plt
@@ -12,6 +11,7 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
+from datetime import datetime
 
 steps_done = 0
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
@@ -28,6 +28,7 @@ class ReplayMemory(object):
         """Saves a transition."""
         if len(self.memory) < self.capacity:
             self.memory.append(None)
+
         self.memory[self.position] = Transition(*args)
         self.position = (self.position + 1) % self.capacity
 
@@ -40,18 +41,18 @@ class ReplayMemory(object):
 
 class DroneDQN(Drone):
     def __init__(self, config,
-                 gamma=0.99,
+                 gamma=0.999,
                  eps_start=.9,
                  eps_end=0.05,
-                 eps_decay=1,
+                 eps_decay=50,
                  learning_rate=0.00025,
                  momentum=0.95,
-                 batch_size=1,
+                 batch_size=4,
                  memory_size=500000,
                  train_after=10000,
-                 train_interval=4,
+                 train_interval=10,
                  target_update_interval=10,
-                 num_actions=4):
+                 num_actions=2):
 
         self.config = config
         # if gpu is to be used
@@ -76,6 +77,24 @@ class DroneDQN(Drone):
 
         # self._explorer = explorer
 
+        # Jarain78
+        init_xpos = self.getPosition().x_val
+        init_ypos = self.getPosition().y_val
+        init_zpos = self.getPosition().z_val
+
+        # print(init_xpos, init_ypos, init_zpos)
+        # self.drone.moveTo(init_xpos + 20, init_ypos, -2, 1.5)
+
+        self.quad_state = self.getQuadState()
+        self.goal_x = init_xpos + 20
+        self.goal_y = init_ypos
+        self.init_distance = self.calculateDistance(self.goal_y,
+                                                    self.goal_x, init_ypos, init_xpos)
+
+        self.min_set_reward = -1000
+        self.max_set_reward = 1000
+        self.old_distance = 0
+
         # Metrics accumulator
         self._episode_rewards, self._episode_q_means, self._episode_q_stddev = [], [], []
 
@@ -84,8 +103,8 @@ class DroneDQN(Drone):
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * steps_done / self.EPS_DECAY)
         steps_done += 1
-        print('sample', sample, 'eps_threshold', eps_threshold, 'steps_done', steps_done, 'sample > eps_threshold',
-              sample > eps_threshold)
+        # print('sample', sample, 'eps_threshold', eps_threshold, 'steps_done', steps_done, 'sample > eps_threshold',
+        #      sample > eps_threshold)
 
         if steps_done > self.BATCH_SIZE and sample > eps_threshold:
             print("Accion Entrenamiento")
@@ -93,12 +112,12 @@ class DroneDQN(Drone):
                 # t.max(1) will return largest column value of each row.
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
-                print("Policy Net: ", self.policy_net(state))
-                print("Select Action: ", self.policy_net(state).max(1)[1])
-                print("Select Action: ", self.policy_net(state).max(1)[1].view(1, 1))
+                # print("Policy Net: ", self.policy_net(state))
+                # print("Select Action: ", self.policy_net(state).max(1)[1])
+                # print("Select Action: ", self.policy_net(state).max(1)[1].view(1, 1))
 
                 state1 = state.clone().detach().requires_grad_(True)
-                return self.policy_net(state1).max(1)[1]  # .view(1, 1)
+                return self.policy_net(state1).max(1)[1].view(1, 1)
         else:
             print("Accion Aleatoria")
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
@@ -116,11 +135,13 @@ class DroneDQN(Drone):
             means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
             means = torch.cat((torch.zeros(99), means))
             plt.plot(means.numpy())
-
+        plt.grid()
         plt.pause(0.001)  # pause a bit so that plots are updated
-        name = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S:%f")
-        # plt.savefig("fig" + str(name))
-        plt.savefig("test_rasterization.jpg", dpi=150)
+        # name = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S:%f")
+        plt.show()
+        plt.savefig(
+            "E:\\Dropbox\\Cognitive_Service_Project\\TFMDroneDQN-master\\Logs\Plots\\" + str(datetime.now()).replace(
+                ':', '_') + ".png", dpi=200)
 
     def optimize_model(self):
         print('Optimize_model')
@@ -135,15 +156,13 @@ class DroneDQN(Drone):
         # Compute a mask of non-final states and concatenate the batch elements
         # (a final state would've been the one after which simulation ended)
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                batch.next_state)), device=self.device, dtype=torch.uint8)
+                                                batch.next_state)), device="cpu", dtype=torch.uint8)
 
-        non_final_next_states = torch.cat([s for s in batch.next_state
-                                           if s is not None])
-        max_action = max(batch.action)
-        print("batch.action: ", max_action)
+        aa = [s for s in batch.next_state if s is not None]
+        non_final_next_states = torch.cat(aa)
 
         state_batch = torch.cat(batch.state)
-        action_batch = max_action #torch.cat(batch.action)
+        action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
 
         #print("state_batch: ", state_batch)
@@ -153,7 +172,7 @@ class DroneDQN(Drone):
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch)#.gather(1, action_batch)
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
 
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
@@ -162,12 +181,13 @@ class DroneDQN(Drone):
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
 
-        #next_state_values[non_final_mask] = torch.tensor(self.target_net(non_final_next_states).max(1)[0].detach())
-
+        next_state_values = torch.zeros(self.BATCH_SIZE, device="cpu")
+        # print(next_state_values)
         next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
 
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
+
         # Compute Huber loss
         loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
 
@@ -181,14 +201,58 @@ class DroneDQN(Drone):
     def interpret_action(self, action):
         print("*" * 20, action)
         if action == 0:
-            self.moveDerecha(self.config.mov, self.config.vel)
+            print("Adelante")
+            self.moveDelante(self.config.mov, self.config.vel)
         elif action == 1:
+            print("Izquierda")
             self.moveIzquierda(self.config.mov, self.config.vel)
         elif action == 2:
-            self.moveDelante(self.config.mov, self.config.vel)
+            print("Derecha")
+            self.moveDerecha(self.config.mov, self.config.vel)
         elif action == 3:
+            print("Atras")
+            self.moveAtras(self.config.mov, self.config.vel)
+        elif action == 4:
+            print("Arriba")
+            self.moveArriba(self.config.mov, self.config.vel)
+        elif action == 5:
+            print("Abajo")
+            # self.moveAbajo(self.config.mov, self.config.vel)
             pass
-            #self.moveAtras(self.config.mov, self.config.vel)
+
+    # jarain78
+    def interpret_action_1(self, action):
+        scaling_factor = 1.5
+
+        if action == 0:
+            print("RIGNT")
+            quad_offset = (0, scaling_factor, 0)
+        elif action == 1:
+            print("LEFT")
+            quad_offset = (0, -scaling_factor, 0)
+        elif action == 2:
+            print("FORWARE")
+            quad_offset = (scaling_factor, 0, 0)
+        elif action == 3:
+            print("BACKWARE")
+            quad_offset = (-scaling_factor, 0, 0)
+        elif action == 4:
+            print("UP")
+            quad_offset = (0, 0, -scaling_factor)
+        elif action == 5:
+            print("DOWN")
+            quad_offset = (0, 0, scaling_factor)
+
+        quad_vel = self.client.getMultirotorState().kinematics_estimated.linear_velocity
+        self.client.moveByVelocityAsync(quad_vel.x_val + quad_offset[0], quad_vel.y_val + quad_offset[1],
+                                        quad_vel.z_val + quad_offset[2], 5).join()
+
+        # self.client.moveToPositionAsync(quad_offset[0], quad_offset[1], quad_offset[2], 0.8,
+        #                                vehicle_name=self.nombre).join()
+
+    def calculateDistance(self, x1, y1, x2, y2):
+        dist = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        return dist
 
     def compute_reward(self, action):
 
@@ -210,32 +274,19 @@ class DroneDQN(Drone):
         if self.collision_info.has_collided:
             reward = -1000
         else:
-            #reward = np.int16(np.negative(self.quad_state.y_val) + self.quad_state.x_val).item()
-            x_objetivo = 0
-            y_objetivo = 0
+            # reward = np.int16(np.negative(self.quad_state.y_val) + self.quad_state.x_val).item()
+            x_objetivo = self.goal_x
+            y_objetivo = self.goal_y
             maxreword = 1000
-            distance = np.sqrt(np.power(self.quad_state.y_val - y_objetivo)**2 + (self.quad_state.x_val - x_objetivo)**2)
-            print(distance)
+            distance = self.calculateDistance(self.quad_state.x_val, self.quad_state.y_val, x_objetivo, y_objetivo)
+
             if distance > maxreword:
                 reward = 0
             else:
                 reward = maxreword - distance
-        return reward
+        print("=" * 20, reward)
 
-        #     dist = 10000000
-        #     # for i in range(0, len(pts) - 1):
-        #     #    dist = min(dist, np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1]))) / np.linalg.norm(
-        #     #        pts[i] - pts[i + 1]))
-        #     dist = min()
-        #     # print(dist)
-        #     if dist > thresh_dist:
-        #         reward = -10
-        #     else:
-        #         reward_dist = (math.exp(-beta * dist) - 0.5)
-        #         reward_speed = (np.linalg.norm([self.quad_vel.x_val, self.quad_vel.y_val, self.quad_vel.z_val]) - 0.5)
-        #         reward = reward_dist + reward_speed
-        #
-        # return reward
+        return int(reward)
 
     def isDone(self, reward):
         done = False
@@ -245,11 +296,11 @@ class DroneDQN(Drone):
 
     def start(self):
         self.init_screen = self.getLidar()
-        print('init_screen', self.init_screen.size(), self.init_screen.type())
+        '''print('init_screen', self.init_screen.size(), self.init_screen.type())'''
         _, _, screen_height, screen_width = self.init_screen.shape
 
-        self.policy_net = DQN_net(screen_height, screen_width, self.n_actions).to(self.device)
-        self.target_net = DQN_net(screen_height, screen_width, self.n_actions).to(self.device)
+        self.policy_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
+        self.target_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
 
         # self.policy_net = My_DQN(500, 500, self.n_actions).to(self.device)
         # self.target_net = My_DQN(500, 500, self.n_actions).to(self.device)
@@ -259,6 +310,8 @@ class DroneDQN(Drone):
         self.target_net.eval()
 
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
+        # self.optimizer = optim.SGD(self.policy_net.parameters(), lr=0.01, momentum=0.2)
+
         self.memory = ReplayMemory(10000)
         self.steps_done = 0
         self.episode_durations = []

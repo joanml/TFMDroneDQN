@@ -193,12 +193,14 @@ class DQNAgent(Agent):
             self.drone.takeoff()
             self.drone.last_screen = self.drone.getLidar()
             self.drone.current_screen = self.drone.getLidar()
-
-            # self.drone.state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen),
-            #                                device=self.drone.device, dtype=torch.float)
-            self.drone.state = self.drone.current_screen - self.drone.last_screen
-
+            self.drone.state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen),
+                                            device=self.drone.device, dtype=torch.float)
+            # xx = self.drone.current_screen - self.drone.last_screen
+            # self.drone.state = torch.tensor(self.drone.state, device="cpu", dtype=torch.float)
             # self.drone.state = np.subtract(self.drone.current_screen, self.drone.last_screen).clone().detach()
+
+            old_next_state = self.drone.state
+
             for t in count():
                 print("-" * 20 + str((self.drone.state.shape)))
                 # Select and perform an action
@@ -217,26 +219,31 @@ class DQNAgent(Agent):
                 self.drone.current_screen = self.drone.getLidar()
 
                 if not done:
-                    next_state = self.drone.current_screen - self.drone.last_screen
-                    # next_state = torch.tensor(np.subtract(self.drone.current_screen, self.drone.last_screen),
-                    #                          device=self.drone.device, dtype=torch.float)
+                    next_state = self.drone.current_screen - self.drone.last_screen  # np.subtract(self.drone.current_screen, self.drone.last_screen)
+                else:
+                    next_state = old_next_state
 
+                # Store the transition in memory
+                '''print("Memory push:", self.drone.state.size(), self.drone.action.size(), next_state.size(),
+                      self.drone.reward.size())'''
 
-                    # Store the transition in memory
-                    self.drone.memory.push(self.drone.state, self.drone.action, next_state, self.drone.reward)
-                    print("Memory size:", self.drone.memory.__len__())
-                    # Move to the next state
-                    self.drone.state = next_state
+                self.drone.memory.push(self.drone.state, self.drone.action, next_state, self.drone.reward)
+                # print("Memory size:", self.drone.memory.__len__())
+                # Move to the next state
+                self.drone.state = next_state
 
-                    # Perform one step of the optimization (on the target network)
-                    self.drone.optimize_model()
+                # Perform one step of the optimization (on the target network)
+                self.drone.optimize_model()
 
-                if done:
+                print("#" * 20, self.drone.getCollision().has_collided)
+                if done or self.drone.getCollision().has_collided:
                     self.drone.episode_durations.append(t + 1)
                     self.drone.plot_durations()
                     break
+                old_next_state = next_state
 
             self.num_episodes -= 1
+
             if self.num_episodes <= 0:
                 print('Complete')
                 self.kill(exit_code=10)
