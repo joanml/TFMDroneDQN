@@ -1,7 +1,7 @@
 import airsim
 import random
 
-import cv2
+#import cv2
 from PIL import Image
 import torch
 import torch.nn as nn
@@ -221,10 +221,10 @@ class Replay_Memory(object):
             return self._states.take(indexes, mode='wrap', axis=0)
 
 
-class DQN(nn.Module):
+class DQN_net(nn.Module):
 
     def __init__(self, h, w, outputs):
-        super(DQN, self).__init__()
+        super(DQN_net, self).__init__()
         self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
         self.bn1 = nn.BatchNorm2d(16)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
@@ -343,19 +343,19 @@ class Drone():
         im = Image.frombytes("RGBA", (width, height), s)
         # im = im.convert('L')
         # jarain78
-        open_cv_image = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
-        image = self.create_blank(width, height)
-        image = cv2.add(image, open_cv_image)
+        #open_cv_image = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
+        #image = self.create_blank(width, height)
+        #image = cv2.add(image, open_cv_image)
 
         if self.vervose:
             im.show()
             print(width, height)
-            print(image.shape)
-            cv2.imshow("Blank Image", image)
-            cv2.imwrite('red.jpg', image)
-            cv2.waitKey(0)
+            #print(image.shape)
+            #cv2.imshow("Blank Image", image)
+            #cv2.imwrite('red.jpg', image)
+            #cv2.waitKey(0)
 
-        im = image
+        #im = image
 
         screen = np.ascontiguousarray(im, dtype=np.float32) / 255
         print('screen', screen.size)

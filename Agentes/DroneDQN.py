@@ -1,7 +1,8 @@
 import datetime
+import os
 import time
 
-from Agentes.Drone import Drone, LinearEpsilonAnnealingExplorer, DQN
+from Agentes.Drone import Drone, LinearEpsilonAnnealingExplorer, DQN_net
 import math
 import random
 import matplotlib.pyplot as plt
@@ -214,6 +215,7 @@ class DroneDQN(Drone):
             y_objetivo = 0
             maxreword = 1000
             distance = np.sqrt(np.power(self.quad_state.y_val - y_objetivo)**2 + (self.quad_state.x_val - x_objetivo)**2)
+            print(distance)
             if distance > maxreword:
                 reward = 0
             else:
@@ -246,8 +248,8 @@ class DroneDQN(Drone):
         print('init_screen', self.init_screen.size(), self.init_screen.type())
         _, _, screen_height, screen_width = self.init_screen.shape
 
-        self.policy_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
-        self.target_net = DQN(screen_height, screen_width, self.n_actions).to(self.device)
+        self.policy_net = DQN_net(screen_height, screen_width, self.n_actions).to(self.device)
+        self.target_net = DQN_net(screen_height, screen_width, self.n_actions).to(self.device)
 
         # self.policy_net = My_DQN(500, 500, self.n_actions).to(self.device)
         # self.target_net = My_DQN(500, 500, self.n_actions).to(self.device)
@@ -261,41 +263,38 @@ class DroneDQN(Drone):
         self.steps_done = 0
         self.episode_durations = []
 
-    # def run(self):
-    #     print("RUN DroneDQN reset")
-    #     self.reset_env()
-    #     print("RUN DroneDQN reset out")
-    #     time.sleep(1)
-    #     self.takeoffPositionStart(self.config.vel)
-    #
-    #     self.last_screen = self.getLidar()
-    #     self.current_screen = self.getLidar()
-    #     state = torch.tensor(np.subtract(self.current_screen, self.last_screen), device=self.device, dtype=torch.float)
-    #     for t in count():
-    #         # Select and perform an action
-    #         action = self.select_action(state)
-    #         reward = self.compute_reward(action)
-    #         done = self.isDone(reward)
-    #         # _, reward, done, _ = env.step(action.item())
-    #         reward = torch.tensor([reward], device=self.device)
-    #
-    #         # Observe new state
-    #         self.last_screen = self.current_screen
-    #         self.current_screen = self.getLidar()
-    #         if not done:
-    #             next_state = self.current_screen - self.last_screen
-    #         else:
-    #             next_state = None
-    #
-    #         # Store the transition in memory
-    #         self.memory.push(state, action, next_state, reward)
-    #
-    #         # Move to the next state
-    #         state = next_state
-    #
-    #         # Perform one step of the optimization (on the target network)
-    #         self.optimize_model()
-    #         if done:
-    #             self.episode_durations.append(t + 1)
-    #             self.plot_durations()
-    #             break
+    def save(self, id):
+        filename = 'tmp/models/model_{}.pth.tar'.format(id)
+        dirpath = './modelos'
+        if not os.path.exists(dirpath):
+            os.mkdir(dirpath)
+        checkpoint = {
+            'net': self.agent.net.state_dict(),
+            'target': self.agent.target.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'total_step': self.total_step
+        }
+        torch.save(checkpoint, filename)
+
+    def load(self, filename, device='cpu'):
+        ckpt = torch.load(filename, map_location=lambda storage, loc: storage)
+        ## Deal with the missing of bn.num_batches_tracked
+        net_new = DQN_net()
+        tar_new = DQN_net()
+
+        for k, v in ckpt['net'].items():
+            for _k, _v in self.agent.net.state_dict().items():
+                if k == _k:
+                    net_new[k] = v
+
+        for k, v in ckpt['target'].items():
+            for _k, _v in self.agent.target.state_dict().items():
+                if k == _k:
+                    tar_new[k] = v
+
+        self.agent.net.load_state_dict(net_new)
+        self.agent.target.load_state_dict(tar_new)
+        ## -----------------------------------------------
+
+        self.optimizer.load_state_dict(ckpt['optimizer'])
+        self.total_step = ckpt['total_step']
