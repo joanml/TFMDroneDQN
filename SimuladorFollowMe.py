@@ -1,7 +1,4 @@
 import time
-import Agentes
-from Agentes.Master import Master
-from Agentes.Slave import Slave
 from Agentes.AgenteSpadeDrone import PeriodicSenderAgent, ReceiverAgent, Config
 
 if __name__ == "__main__":
@@ -13,7 +10,6 @@ if __name__ == "__main__":
 
     master = PeriodicSenderAgent(MasterConfig)
     slave = ReceiverAgent(SlaveConfig)
-    #slave = PeriodicSenderAgent(SlaveConfig)
     slave.start()
     master.start()
     while master.is_alive():

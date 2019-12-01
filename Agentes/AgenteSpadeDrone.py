@@ -1,38 +1,18 @@
 import datetime
-import time
 from itertools import count
-
 import numpy as np
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.figure import Figure
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from spade.message import Message
 from spade.template import Template
-
 from Agentes.Master import Master
 from Agentes.Slave import Slave
 from Agentes.DroneDQN import DroneDQN
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-import torchvision.transforms as T
 
 
 class Config():
-    def __init__(self,
-                 jid,
-                 password,
-                 name,
-                 lidar1,
-                 lidar2='',
-                 gps='',
-                 jidSlave="",
-                 vel=1,
-                 mov=1,
-                 vervose=False,
-                 num_episodes=0):
+    def __init__(self,jid,password,name,lidar1,lidar2='',gps='',jidSlave="",vel=1,mov=1,vervose=False,num_episodes=0):
         self.jid = jid
         self.password = password
         self.jidSlave = jidSlave

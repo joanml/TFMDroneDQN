@@ -1,6 +1,6 @@
 import datetime
 import time
-
+import os
 from Agentes.Drone import Drone, LinearEpsilonAnnealingExplorer, DQN
 import math
 import random
@@ -117,7 +117,9 @@ class DroneDQN(Drone):
                 # print("Select Action: ", self.policy_net(state).max(1)[1].view(1, 1))
 
                 state1 = state.clone().detach().requires_grad_(True)
-                return self.policy_net(state1).max(1)[1].view(1, 1)
+                #return self.policy_net(state1).max(1)[1].view(1, 1)
+                return self.target_net(state1).max(1)[1].view(1, 1)
+
         else:
             print("Accion Aleatoria")
             return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
@@ -332,8 +334,8 @@ class DroneDQN(Drone):
     def load(self, filename, device='cpu'):
         ckpt = torch.load(filename, map_location=lambda storage, loc: storage)
         ## Deal with the missing of bn.num_batches_tracked
-        net_new = DQN_net()
-        tar_new = DQN_net()
+        net_new = DQN()
+        tar_new = DQN()
 
         for k, v in ckpt['net'].items():
             for _k, _v in self.agent.net.state_dict().items():
