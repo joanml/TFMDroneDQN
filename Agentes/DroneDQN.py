@@ -117,8 +117,8 @@ class DroneDQN(Drone):
                 # print("Select Action: ", self.policy_net(state).max(1)[1].view(1, 1))
 
                 state1 = state.clone().detach().requires_grad_(True)
-                #return self.policy_net(state1).max(1)[1].view(1, 1)
-                return self.target_net(state1).max(1)[1].view(1, 1)
+                return self.policy_net(state1).max(1)[1].view(1, 1)
+
 
         else:
             print("Accion Aleatoria")
